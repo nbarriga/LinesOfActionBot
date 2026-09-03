@@ -1,0 +1,7 @@
+uci
+isready
+ucinewgame
+position startpos moves b1b3 a2c2 b8b6
+d
+go
+quit
