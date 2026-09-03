@@ -42,8 +42,19 @@ int main() {
             }
         } 
         else if (line.rfind("go", 0) == 0) {
-            // Placeholder: currently returns first standard LOA opening move
-            std::string best_move = "b1b3";
+            // Placeholder: sample legal opening moves
+            std::string best_move = "(none)";
+            if (board.turn() == Color::BLACK) {
+                if (board.piece_at(string_to_square("b1")) == 'X') {
+                    best_move = "b1b3";
+                } else if (board.piece_at(string_to_square("b8")) == 'X') {
+                    best_move = "b8b6";
+                }
+            } else {
+                if (board.piece_at(string_to_square("a2")) == 'O') {
+                    best_move = "a2c2";
+                }
+            }
             std::cout << "bestmove " << best_move << std::endl;
         } 
         else if (line == "d" || line == "print") {
