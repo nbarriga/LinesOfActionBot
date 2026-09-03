@@ -154,6 +154,150 @@ void test_print() {
     std::cout << "test_print passed!\n";
 }
 
+void test_initial_legal_moves() {
+    std::cout << "Running test_initial_legal_moves..." << std::endl;
+    Board board;
+    auto moves = board.generate_legal_moves();
+    assert(moves.size() == 36);
+
+    auto has_move = [&](const std::string& uci) {
+        Move target = Move::from_uci(uci);
+        for (const auto& m : moves) {
+            if (m == target) return true;
+        }
+        return false;
+    };
+
+    // Verify key initial moves for Black
+    assert(has_move("b1b3"));
+    assert(has_move("b1h1"));
+    assert(has_move("b1d3"));
+    assert(has_move("c1a3")); // capture
+    assert(has_move("c1c3"));
+    assert(has_move("c1e3"));
+    assert(has_move("d1b3"));
+    assert(has_move("d1d3"));
+    assert(has_move("d1f3"));
+
+    // Verify initial moves for White
+    board.set_turn(Color::WHITE);
+    auto white_moves = board.generate_legal_moves();
+    assert(white_moves.size() == 36);
+
+    auto has_white_move = [&](const std::string& uci) {
+        Move target = Move::from_uci(uci);
+        for (const auto& m : white_moves) {
+            if (m == target) return true;
+        }
+        return false;
+    };
+    assert(has_white_move("a2c2"));
+    assert(has_white_move("a2a8"));
+    assert(has_white_move("a2c4"));
+    assert(has_white_move("a3c1")); // capture
+
+    std::cout << "test_initial_legal_moves passed!\n";
+}
+
+void test_friendly_jump() {
+    std::cout << "Running test_friendly_jump..." << std::endl;
+    // Black pieces at b2, b3, b6. White has no pieces on file b.
+    // Line piece count on file b is 3.
+    // Piece at b2 moving north: count = 3. Target is b5.
+    // Square b3 has a friendly piece, so b2 jumps over b3 to land on empty b5.
+    uint64_t black = (1ULL << string_to_square("b2")) |
+                     (1ULL << string_to_square("b3")) |
+                     (1ULL << string_to_square("b6"));
+    uint64_t white = (1ULL << string_to_square("h8")); // isolated dummy piece
+    Board board(black, white, Color::BLACK);
+
+    auto moves = board.generate_legal_moves();
+    bool found_b2b5 = false;
+    for (const auto& m : moves) {
+        if (m.to_uci() == "b2b5") {
+            found_b2b5 = true;
+            break;
+        }
+    }
+    assert(found_b2b5);
+    std::cout << "test_friendly_jump passed!\n";
+}
+
+void test_enemy_block() {
+    std::cout << "Running test_enemy_block..." << std::endl;
+    // Black pieces at b2, b6. White piece at b3.
+    // Line piece count on file b is 3.
+    // Piece at b2 moving north: count = 3. Target is b5.
+    // Square b3 has an opponent piece, so b2 is blocked and cannot jump over b3!
+    uint64_t black = (1ULL << string_to_square("b2")) |
+                     (1ULL << string_to_square("b6"));
+    uint64_t white = (1ULL << string_to_square("b3"));
+    Board board(black, white, Color::BLACK);
+
+    auto moves = board.generate_legal_moves();
+    for (const auto& m : moves) {
+        assert(m.to_uci() != "b2b5");
+    }
+    std::cout << "test_enemy_block passed!\n";
+}
+
+void test_captures_and_friendly_destinations() {
+    std::cout << "Running test_captures_and_friendly_destinations..." << std::endl;
+    // Black at d4, White at d6.
+    // File d has 2 pieces. Black at d4 moving north: count = 2. Target = d6.
+    // d6 has an opponent piece, so d4d6 is a valid capture.
+    uint64_t black = (1ULL << string_to_square("d4"));
+    uint64_t white = (1ULL << string_to_square("d6"));
+    Board board(black, white, Color::BLACK);
+
+    auto moves = board.generate_legal_moves();
+    bool captured = false;
+    for (const auto& m : moves) {
+        if (m.to_uci() == "d4d6") {
+            captured = true;
+            break;
+        }
+    }
+    assert(captured);
+
+    // If target d6 has a friendly piece instead, it must not be generated
+    Board board_friendly((1ULL << string_to_square("d4")) | (1ULL << string_to_square("d6")),
+                         (1ULL << string_to_square("a1")), Color::BLACK);
+    auto moves_friendly = board_friendly.generate_legal_moves();
+    for (const auto& m : moves_friendly) {
+        assert(m.to_uci() != "d4d6");
+    }
+
+    std::cout << "test_captures_and_friendly_destinations passed!\n";
+}
+
+uint64_t perft(Board& board, int depth) {
+    if (depth == 0) return 1;
+    std::vector<Move> moves;
+    board.generate_legal_moves(moves);
+    if (depth == 1) return moves.size();
+    uint64_t nodes = 0;
+    for (const auto& m : moves) {
+        Board copy = board;
+        copy.apply_move(m);
+        nodes += perft(copy, depth - 1);
+    }
+    return nodes;
+}
+
+void test_perft() {
+    std::cout << "Running test_perft..." << std::endl;
+    Board board;
+    uint64_t p1 = perft(board, 1);
+    assert(p1 == 36);
+    std::cout << "  perft(1) = " << p1 << " (passed)\n";
+
+    uint64_t p2 = perft(board, 2);
+    std::cout << "  perft(2) = " << p2 << "\n";
+    assert(p2 > 0);
+    std::cout << "test_perft passed!\n";
+}
+
 int main() {
     std::cout << "=== Running Lines of Action Bot Tests ===\n";
     test_initial_board();
@@ -162,6 +306,11 @@ int main() {
     test_apply_move_non_capture();
     test_apply_move_capture();
     test_print();
+    test_initial_legal_moves();
+    test_friendly_jump();
+    test_enemy_block();
+    test_captures_and_friendly_destinations();
+    test_perft();
     std::cout << "\nAll tests passed successfully!\n";
     return 0;
 }

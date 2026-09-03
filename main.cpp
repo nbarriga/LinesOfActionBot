@@ -1,12 +1,14 @@
 #include "Board.h"
 #include "Move.h"
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
 
 int main() {
     std::string line;
     Board board;
+    std::mt19937 rng(1337);
 
     // Tell the wrapper your engine name when it initializes
     std::cout << "id name LOABot\n";
@@ -42,20 +44,14 @@ int main() {
             }
         } 
         else if (line.rfind("go", 0) == 0) {
-            // Placeholder: sample legal opening moves
-            std::string best_move = "(none)";
-            if (board.turn() == Color::BLACK) {
-                if (board.piece_at(string_to_square("b1")) == 'X') {
-                    best_move = "b1b3";
-                } else if (board.piece_at(string_to_square("b8")) == 'X') {
-                    best_move = "b8b6";
-                }
+            auto moves = board.generate_legal_moves();
+            if (moves.empty()) {
+                std::cout << "bestmove (none)" << std::endl;
             } else {
-                if (board.piece_at(string_to_square("a2")) == 'O') {
-                    best_move = "a2c2";
-                }
+                std::uniform_int_distribution<size_t> dist(0, moves.size() - 1);
+                const Move& chosen = moves[dist(rng)];
+                std::cout << "bestmove " << chosen.to_uci() << std::endl;
             }
-            std::cout << "bestmove " << best_move << std::endl;
         } 
         else if (line == "d" || line == "print") {
             board.print();

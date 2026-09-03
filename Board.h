@@ -4,6 +4,7 @@
 #include "Move.h"
 #include <cstdint>
 #include <iostream>
+#include <vector>
 
 class Board {
 public:
@@ -16,6 +17,9 @@ public:
     Board& operator=(const Board& other) = default;
 
     void apply_move(const Move& move);
+
+    std::vector<Move> generate_legal_moves() const;
+    void generate_legal_moves(std::vector<Move>& moves) const;
 
     uint64_t pieces(Color c) const;
     uint64_t black_pieces() const;
