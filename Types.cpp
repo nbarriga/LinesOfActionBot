@@ -39,3 +39,7 @@ uint8_t string_to_square(const std::string& s) {
     assert(file < 8 && rank < 8);
     return make_square(file, rank);
 }
+
+std::string color_to_string(Color c) {
+    return (c == Color::BLACK) ? "black" : "white";
+}

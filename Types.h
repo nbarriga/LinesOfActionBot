@@ -15,3 +15,4 @@ uint8_t square_file(uint8_t sq);
 uint8_t square_rank(uint8_t sq);
 std::string square_to_string(uint8_t sq);
 uint8_t string_to_square(const std::string& s);
+std::string color_to_string(Color c);

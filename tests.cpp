@@ -396,6 +396,43 @@ void test_is_connected() {
     std::cout << "test_is_connected passed!\n";
 }
 
+void test_is_game_over() {
+    std::cout << "Running test_is_game_over..." << std::endl;
+
+    // 1. Initial board: game not over
+    Board init_b;
+    Color winner;
+    assert(!init_b.is_game_over(winner));
+
+    // 2. Black connected, White turn -> Black won
+    uint64_t conn_black = (1ULL << string_to_square("d4"))
+                        | (1ULL << string_to_square("d5"));
+    uint64_t split_white = (1ULL << string_to_square("a1"))
+                         | (1ULL << string_to_square("h8"));
+    Board black_won(conn_black, split_white, Color::WHITE);
+    assert(black_won.is_game_over(winner));
+    assert(winner == Color::BLACK);
+
+    // 3. White connected, Black turn -> White won
+    Board white_won(split_white, conn_black, Color::BLACK);
+    assert(white_won.is_game_over(winner));
+    assert(winner == Color::WHITE);
+
+    // 4. Simultaneous connection: moving player wins
+    // If White just moved (turn is Black) and both are connected -> White wins
+    Board both_conn(conn_black, conn_black, Color::BLACK);
+    assert(both_conn.is_game_over(winner));
+    assert(winner == Color::WHITE);
+
+    // 5. Single piece is trivially connected:
+    uint64_t single_black = (1ULL << string_to_square("a1"));
+    Board single_b(single_black, split_white, Color::WHITE);
+    assert(single_b.is_game_over(winner));
+    assert(winner == Color::BLACK);
+
+    std::cout << "test_is_game_over passed!\n";
+}
+
 void test_board_evaluate() {
     std::cout << "Running test_board_evaluate..." << std::endl;
     Board initial_board;
@@ -676,6 +713,7 @@ int main() {
     test_fen_side_to_move();
     test_fen_after_move();
     test_is_connected();
+    test_is_game_over();
     test_board_evaluate();
     test_search_negamax();
     test_iterative_deepening();

@@ -34,6 +34,7 @@ public:
     void print(std::ostream& os = std::cout) const;
 
     bool is_connected(Color c) const;
+    bool is_game_over(Color& winner) const;
     int evaluate() const;
 
     static Board from_fen(const std::string& fen);

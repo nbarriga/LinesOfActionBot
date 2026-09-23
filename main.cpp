@@ -6,16 +6,40 @@
 #include <sstream>
 #include <string>
 
-int main() {
+static std::string to_lower(std::string s) {
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+int main(int argc, char** argv) {
     std::string line;
     Board board;
     Search search;
     std::mt19937 rng(1337);
 
-    // Tell the wrapper your engine name when it initializes
-    // std::cout << "id name LOABot\n";
-    // std::cout << "id author Antigravity\n";
-    // std::cout << "uciok" << std::endl;
+    SearchAlgorithm algo = SearchAlgorithm::ALPHABETA;
+    int default_depth = 4;
+    bool use_tt = true;
+    bool order_moves = true;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--algo" && i + 1 < argc) {
+            std::string a = to_lower(argv[++i]);
+            if (a == "negamax") algo = SearchAlgorithm::NEGAMAX;
+            else if (a == "alphabeta") algo = SearchAlgorithm::ALPHABETA;
+        } else if (arg == "--depth" && i + 1 < argc) {
+            default_depth = std::stoi(argv[++i]);
+        } else if (arg == "--tt" && i + 1 < argc) {
+            std::string val = to_lower(argv[++i]);
+            use_tt = (val == "true" || val == "1");
+        } else if (arg == "--order" && i + 1 < argc) {
+            std::string val = to_lower(argv[++i]);
+            order_moves = (val == "true" || val == "1");
+        }
+    }
 
     while (std::getline(std::cin, line)) {
         if (!line.empty() && line.back() == '\r') {
@@ -25,11 +49,15 @@ int main() {
             continue;
         }
         if (line == "uci") {
-            std::cout << "id name LOABot"<< std::endl;
-            std::cout << "id author Nicolas A. Barriga"<< std::endl;
+            std::cout << "id name LOABot" << std::endl;
+            std::cout << "id author Nicolas A. Barriga" << std::endl;
             std::cout << "option name Move Overhead type spin default 100 min 0 max 5000" << std::endl;
             std::cout << "option name Threads type spin default 1 min 1 max 128" << std::endl;
             std::cout << "option name Hash type spin default 16 min 1 max 1024" << std::endl;
+            std::cout << "option name Algorithm type combo default alphabeta var alphabeta var negamax" << std::endl;
+            std::cout << "option name Depth type spin default 4 min 1 max 20" << std::endl;
+            std::cout << "option name UseTT type check default true" << std::endl;
+            std::cout << "option name OrderMoves type check default true" << std::endl;
             std::cout << "uciok" << std::endl;
         }
         else if (line == "isready") {
@@ -38,6 +66,50 @@ int main() {
         else if (line == "ucinewgame") {
             board = Board();
             search.clear_tt();
+        }
+        else if (line.rfind("setoption", 0) == 0) {
+            std::istringstream iss(line);
+            std::string token;
+            iss >> token; // "setoption"
+            std::string opt_name;
+            std::string opt_val;
+            bool reading_name = false;
+            bool reading_val = false;
+
+            while (iss >> token) {
+                std::string lower = to_lower(token);
+                if (lower == "name") {
+                    reading_name = true;
+                    reading_val = false;
+                } else if (lower == "value") {
+                    reading_name = false;
+                    reading_val = true;
+                } else if (reading_name) {
+                    if (!opt_name.empty()) opt_name += " ";
+                    opt_name += token;
+                } else if (reading_val) {
+                    if (!opt_val.empty()) opt_val += " ";
+                    opt_val += token;
+                }
+            }
+
+            std::string name_lower = to_lower(opt_name);
+            std::string val_lower = to_lower(opt_val);
+
+            if (name_lower == "algorithm") {
+                if (val_lower == "negamax") {
+                    algo = SearchAlgorithm::NEGAMAX;
+                } else if (val_lower == "alphabeta") {
+                    algo = SearchAlgorithm::ALPHABETA;
+                }
+            } else if (name_lower == "depth") {
+                int d = std::stoi(opt_val);
+                if (d >= 1) default_depth = d;
+            } else if (name_lower == "usett") {
+                use_tt = (val_lower == "true" || val_lower == "1");
+            } else if (name_lower == "ordermoves") {
+                order_moves = (val_lower == "true" || val_lower == "1");
+            }
         }
         else if (line.rfind("position", 0) == 0) {
             // e.g., "position startpos moves b1b3 a2c2"
@@ -80,7 +152,7 @@ int main() {
             std::istringstream iss(line);
             std::string token;
             iss >> token; // "go"
-            int depth = 2; // Default depth for pure negamax
+            int depth = default_depth;
             while (iss >> token) {
                 if (token == "depth") {
                     int d;
@@ -91,14 +163,57 @@ int main() {
             }
             if (depth < 1) depth = 1;
 
-            auto moves = board.generate_legal_moves();
-            if (moves.empty()) {
+            Color winner;
+            if (board.is_game_over(winner)) {
+                std::cout << "info string gameover " << color_to_string(winner) << "_wins" << std::endl;
                 std::cout << "bestmove (none)" << std::endl;
             } else {
-                Move chosen = search.find_best_move(board, depth);
-                std::cout << "bestmove " << chosen.to_uci() << std::endl;
+                Move chosen = search.find_best_move(board, depth, true, algo, order_moves, use_tt);
+                if (chosen == Move()) {
+                    std::cout << "info string gameover " << color_to_string(~board.turn()) << "_wins" << std::endl;
+                    std::cout << "bestmove (none)" << std::endl;
+                } else {
+                    std::cout << "bestmove " << chosen.to_uci() << std::endl;
+                }
             }
         } 
+        else if (line == "status" || line == "isgameover") {
+            Color winner;
+            if (board.is_game_over(winner)) {
+                std::cout << "gameover " << color_to_string(winner) << "_wins" << std::endl;
+            } else {
+                std::cout << "in_progress" << std::endl;
+            }
+        }
+        else if (line == "legalmoves" || line == "moves") {
+            Color winner;
+            if (board.is_game_over(winner)) {
+                std::cout << "info string gameover " << color_to_string(winner) << "_wins" << std::endl;
+                std::cout << "legalmoves" << std::endl;
+            } else {
+                auto legal = board.generate_legal_moves();
+                std::cout << "legalmoves";
+                for (const auto& m : legal) {
+                    std::cout << " " << m.to_uci();
+                }
+                std::cout << std::endl;
+            }
+        }
+        else if (line == "randommove") {
+            Color winner;
+            if (board.is_game_over(winner)) {
+                std::cout << "info string gameover " << color_to_string(winner) << "_wins" << std::endl;
+                std::cout << "bestmove (none)" << std::endl;
+            } else {
+                auto legal = board.generate_legal_moves();
+                if (legal.empty()) {
+                    std::cout << "bestmove (none)" << std::endl;
+                } else {
+                    std::uniform_int_distribution<size_t> dist(0, legal.size() - 1);
+                    std::cout << "bestmove " << legal[dist(rng)].to_uci() << std::endl;
+                }
+            }
+        }
         else if (line == "d" || line == "print") {
             board.print();
         }

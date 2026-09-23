@@ -263,6 +263,11 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                            SearchAlgorithm algo, bool order_moves, bool use_tt) {
     reset();
 
+    Color winner;
+    if (board.is_game_over(winner)) {
+        return Move();
+    }
+
     std::vector<Move> moves = board.generate_legal_moves();
     if (moves.empty()) {
         return Move();

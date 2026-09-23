@@ -299,6 +299,25 @@ bool Board::is_connected(Color c) const {
     return connected == bb;
 }
 
+bool Board::is_game_over(Color& winner) const {
+    bool me_connected = is_connected(side_to_move_);
+    bool opp_connected = is_connected(~side_to_move_);
+
+    if (opp_connected) {
+        winner = ~side_to_move_;
+        return true;
+    }
+    if (me_connected) {
+        winner = side_to_move_;
+        return true;
+    }
+    if (generate_legal_moves().empty()) {
+        winner = ~side_to_move_;
+        return true;
+    }
+    return false;
+}
+
 int Board::evaluate() const {
     bool me_connected = is_connected(side_to_move_);
     bool opp_connected = is_connected(~side_to_move_);

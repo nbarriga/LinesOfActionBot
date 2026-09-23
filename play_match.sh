@@ -124,6 +124,9 @@ echo "--------------------------------------------------"
 MOVES=""
 PLY=1
 
+WINNER=""
+WIN_REASON=""
+
 while (( PLY <= MAX_PLIES )); do
     MOVE_NUM=$(( (PLY + 1) / 2 ))
 
@@ -161,15 +164,43 @@ while (( PLY <= MAX_PLIES )); do
     echo "go" >&"$FD_IN"
 
     BESTMOVE=""
+    GAMEOVER_MSG=""
     while IFS= read -r line <&"$FD_OUT"; do
+        if [[ "$line" =~ ^info\ string\ gameover\ (.*) ]]; then
+            GAMEOVER_MSG="${BASH_REMATCH[1]}"
+        fi
         if [[ "$line" =~ ^bestmove\ ([^ ]+) ]]; then
             BESTMOVE="${BASH_REMATCH[1]}"
             break
         fi
     done
 
-    if [[ -z "$BESTMOVE" ]] || [[ "$BESTMOVE" == "(none)" ]] || [[ "$BESTMOVE" == "none" ]]; then
-        echo "Move $MOVE_NUM ($PLAYER): No move returned or bot resigned. Ending game."
+    if [[ -z "$BESTMOVE" ]] || [[ "$BESTMOVE" == "(none)" ]] || [[ "$BESTMOVE" == "none" ]] || [[ "$BESTMOVE" == "resign" ]]; then
+        if [[ -n "$GAMEOVER_MSG" ]]; then
+            echo "Move $MOVE_NUM ($PLAYER): Game Over reported: $GAMEOVER_MSG"
+            if [[ "$GAMEOVER_MSG" =~ black ]]; then
+                WINNER="Black ($BOT1)"
+                WIN_REASON="Black achieved connection/win"
+            elif [[ "$GAMEOVER_MSG" =~ white ]]; then
+                WINNER="White ($BOT2)"
+                WIN_REASON="White achieved connection/win"
+            elif [[ "$GAMEOVER_MSG" =~ draw ]]; then
+                WINNER="Draw"
+                WIN_REASON="Draw reported by engine"
+            else
+                WINNER="$GAMEOVER_MSG"
+                WIN_REASON="Reported by engine"
+            fi
+        else
+            echo "Move $MOVE_NUM ($PLAYER): Bot resigned or returned no move."
+            if [[ "$PLAYER" == "Black" ]]; then
+                WINNER="White ($BOT2)"
+                WIN_REASON="Black resigned / returned no move"
+            else
+                WINNER="Black ($BOT1)"
+                WIN_REASON="White resigned / returned no move"
+            fi
+        fi
         break
     fi
 
@@ -179,9 +210,18 @@ while (( PLY <= MAX_PLIES )); do
     PLY=$((PLY + 1))
 done
 
+if (( PLY > MAX_PLIES )) && [[ -z "$WINNER" ]]; then
+    WINNER="Draw"
+    WIN_REASON="Max plies reached ($MAX_PLIES)"
+fi
+
 echo "--------------------------------------------------"
 echo "Match finished."
-echo "Total plies: $(( PLY - 1 ))"
+echo "Winner      : ${WINNER:-Undetermined}"
+if [[ -n "$WIN_REASON" ]]; then
+    echo "Reason      : $WIN_REASON"
+fi
+echo "Total plies : $(( PLY > MAX_PLIES ? MAX_PLIES : PLY - 1 ))"
 echo "Moves record:"
 if [[ -n "$MOVES" ]]; then
     echo "position startpos moves$MOVES"
