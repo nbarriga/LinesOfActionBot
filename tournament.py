@@ -6,14 +6,25 @@ Plays batch matches between two UCI-compliant bots (or the same bot with differe
 options/algorithms), alternating colors to eliminate first-player advantage,
 and calculates win/loss/draw statistics and Elo ratings.
 
+Expected UCI Protocol Commands:
+  - uci                   : Handshake; bot responds with id/options and 'uciok'
+  - isready               : Sync ping; bot responds with 'readyok'
+  - ucinewgame            : Resets engine state / transposition table for a new game
+  - setoption name ...    : Sets engine configuration (Algorithm, Depth, UseTT, OrderMoves)
+  - position startpos moves ... : Sets up the board position and applies moves
+  - go [depth N]          : Starts search; bot responds with 'bestmove <move>' or
+                            'info string gameover <winner>_wins' + 'bestmove (none)'
+  - legalmoves            : Returns space-separated legal moves (needed for --random-moves)
+  - quit                  : Exits the engine process cleanly
+
 Usage Examples:
   # Pit AlphaBeta with TT against AlphaBeta without TT for 10 games:
   python3 tournament.py --games 10 \
     --bot1-args "--algo alphabeta --tt true" \
     --bot2-args "--algo alphabeta --tt false"
 
-  # Pit depth 4 against depth 3:
-  python3 tournament.py --games 10 \
+  # Pit depth 4 against depth 3 with 2 random opening moves:
+  python3 tournament.py --games 10 --random-moves 2 \
     --bot1-args "--depth 4" \
     --bot2-args "--depth 3"
 
@@ -246,7 +257,58 @@ def play_game(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run UCI Lines of Action bot matches and tournaments.")
+    uci_help = """
+Expected UCI Protocol Commands:
+  The bot is expected to communicate via standard I/O using the Universal Chess
+  Interface (UCI) protocol adapted for Lines of Action. The tournament runner relies on:
+
+  uci
+    Handshake initialization. Bot responds with identification and supported options:
+      id name <Engine Name>
+      id author <Author Name>
+      option name <Name> type <check|spin|combo|string> ...
+      uciok
+
+  isready
+    Synchronization ping. Engine must respond with:
+      readyok
+
+  ucinewgame
+    Signals the start of a new game. The engine clears its transposition table
+    and internal search history. Typically followed by 'isready'.
+
+  setoption name <Name> [value <Value>]
+    Configures an engine option (passed via --bot1-opt / --bot2-opt). Supported:
+      Algorithm  : Search algorithm ('alphabeta', 'negamax')
+      Depth      : Default search depth (integer >= 1)
+      UseTT      : Enable/disable transposition table ('true', 'false')
+      OrderMoves : Enable/disable move ordering ('true', 'false')
+
+  position startpos [moves <m1> <m2> ...]
+    Sets current board position (initial setup) and applies moves (e.g. 'b1d3 a2c4').
+
+  go [depth <N>]
+    Starts search from current position. Engine responds with:
+      bestmove <move>                     (e.g. 'bestmove b1d3')
+    If game is over or engine resigns (no legal moves / terminal state):
+      info string gameover <winner>_wins  (e.g. 'black_wins' or 'white_wins')
+      bestmove (none)
+
+  legalmoves
+    Returns space-separated list of all legal moves for current board:
+      legalmoves <m1> <m2> ...            (e.g. 'legalmoves b1d3 b1b3 b1b4')
+    If game is over, engine returns 'legalmoves' (empty list).
+    Required by tournament.py when generating random opening moves (--random-moves).
+
+  quit
+    Instructs the bot to exit cleanly.
+"""
+
+    parser = argparse.ArgumentParser(
+        description="Run UCI Lines of Action bot matches and tournaments.",
+        epilog=uci_help,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--bot1", default="./loabot", help="Path or command for Bot 1 (default: ./loabot)")
     parser.add_argument("--bot2", default="./loabot", help="Path or command for Bot 2 (default: ./loabot)")
     parser.add_argument("--bot1-name", default="Bot1", help="Display name for Bot 1")
