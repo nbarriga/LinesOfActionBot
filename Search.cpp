@@ -60,7 +60,80 @@ int Search::negamax(Board& board, int depth, int ply) {
     return max_score;
 }
 
-Move Search::find_best_move(Board& board, int depth, bool iterative_deepening) {
+namespace {
+
+void sort_moves_by_eval(const Board& board, std::vector<Move>& moves) {
+    std::vector<std::pair<int, Move>> scored_moves;
+    scored_moves.reserve(moves.size());
+
+    for (const auto& move : moves) {
+        Board next_board = board;
+        next_board.apply_move(move);
+        int eval = -next_board.evaluate();
+        scored_moves.emplace_back(eval, move);
+    }
+
+    std::sort(scored_moves.begin(), scored_moves.end(),
+              [](const auto& a, const auto& b) {
+                  return a.first > b.first;
+              });
+
+    for (size_t i = 0; i < moves.size(); ++i) {
+        moves[i] = scored_moves[i].second;
+    }
+}
+
+} // anonymous namespace
+
+int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, bool order_moves) {
+    ++nodes_visited_;
+
+    // Check terminal conditions
+    bool me_connected = board.is_connected(board.turn());
+    bool opp_connected = board.is_connected(~board.turn());
+
+    if (me_connected && !opp_connected) {
+        return 100000 - ply;
+    }
+    if (opp_connected) {
+        return -100000 + ply;
+    }
+
+    if (depth <= 0) {
+        return board.evaluate();
+    }
+
+    std::vector<Move> moves = board.generate_legal_moves();
+    if (moves.empty()) {
+        return board.evaluate();
+    }
+
+    if (order_moves) {
+        sort_moves_by_eval(board, moves);
+    }
+
+    int max_score = -INF;
+    for (const auto& move : moves) {
+        Board next_board = board;
+        next_board.apply_move(move);
+
+        int score = -alphabeta(next_board, depth - 1, -beta, -alpha, ply + 1, order_moves);
+        if (score > max_score) {
+            max_score = score;
+        }
+        if (score > alpha) {
+            alpha = score;
+        }
+        if (score >= beta) {
+            return score; // Fail-soft beta cutoff
+        }
+    }
+
+    return max_score;
+}
+
+Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
+                           SearchAlgorithm algo, bool order_moves) {
     reset();
 
     std::vector<Move> moves = board.generate_legal_moves();
@@ -81,27 +154,49 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening) {
     for (int d = start_depth; d <= depth; ++d) {
         ++nodes_visited_;
 
+        if (order_moves && algo == SearchAlgorithm::ALPHABETA) {
+            sort_moves_by_eval(board, moves);
+        }
+
         int max_score = -INF;
         Move current_best = moves[0];
+        int alpha = -INF;
+        int beta = INF;
 
         for (const auto& move : moves) {
             Board next_board = board;
             next_board.apply_move(move);
 
-            int score = -negamax(next_board, d - 1, 1);
+            int score;
+            if (algo == SearchAlgorithm::NEGAMAX) {
+                score = -negamax(next_board, d - 1, 1);
+            } else {
+                score = -alphabeta(next_board, d - 1, -beta, -alpha, 1, order_moves);
+            }
+
             if (score > max_score) {
                 max_score = score;
                 current_best = move;
+            }
+            if (algo == SearchAlgorithm::ALPHABETA) {
+                if (score > alpha) {
+                    alpha = score;
+                }
+                if (score >= beta) {
+                    break;
+                }
             }
         }
 
         best_score_ = max_score;
         best_move = current_best;
 
-        // Place best move first for subsequent iterations
-        auto it = std::find(moves.begin(), moves.end(), best_move);
-        if (it != moves.end() && it != moves.begin()) {
-            std::iter_swap(moves.begin(), it);
+        // Place best move first if move ordering is not overriding it
+        if (!order_moves || algo != SearchAlgorithm::ALPHABETA) {
+            auto it = std::find(moves.begin(), moves.end(), best_move);
+            if (it != moves.end() && it != moves.begin()) {
+                std::iter_swap(moves.begin(), it);
+            }
         }
 
         if (iterative_deepening) {

@@ -425,13 +425,13 @@ void test_search_negamax() {
     Search search;
 
     // Depth 1: Root (1) + 36 legal moves = 37 nodes visited
-    Move m1 = search.find_best_move(board, 1, false);
+    Move m1 = search.find_best_move(board, 1, false, SearchAlgorithm::NEGAMAX);
     assert(m1 != Move());
     assert(search.nodes_visited() == 37);
 
     // Depth 2: Root (1) + 36 depth-1 + 1244 depth-2 = 1281 nodes visited
     search.reset();
-    Move m2 = search.find_best_move(board, 2, false);
+    Move m2 = search.find_best_move(board, 2, false, SearchAlgorithm::NEGAMAX);
     assert(m2 != Move());
     assert(search.nodes_visited() == 1 + 36 + 1244);
 
@@ -446,7 +446,7 @@ void test_search_negamax() {
                            | (1ULL << string_to_square("a1"));
     Board win_puzzle(winning_black, winning_white, Color::BLACK);
     Search win_search;
-    Move win_move = win_search.find_best_move(win_puzzle, 1, false);
+    Move win_move = win_search.find_best_move(win_puzzle, 1, false, SearchAlgorithm::NEGAMAX);
     assert(win_move.to_uci() == "b4e4");
     assert(win_search.best_score() >= 99990);
 
@@ -459,7 +459,7 @@ void test_iterative_deepening() {
     Search search;
 
     // Standard depth 2 search without iterative deepening: 1281 nodes
-    Move m_std = search.find_best_move(board, 2, false);
+    Move m_std = search.find_best_move(board, 2, false, SearchAlgorithm::NEGAMAX);
     uint64_t nodes_std = search.nodes_visited();
     assert(nodes_std == 1281);
 
@@ -468,12 +468,51 @@ void test_iterative_deepening() {
     // Iteration 2: 1281 nodes (1 root + 36 depth-1 + 1244 depth-0 leaves)
     // Total nodes: 37 + 1281 = 1318 nodes
     search.reset();
-    Move m_id = search.find_best_move(board, 2, true);
+    Move m_id = search.find_best_move(board, 2, true, SearchAlgorithm::NEGAMAX);
     uint64_t nodes_id = search.nodes_visited();
     assert(nodes_id == 37 + 1281);
     assert(m_id == m_std);
 
     std::cout << "test_iterative_deepening passed!\n";
+}
+
+void test_alphabeta() {
+    std::cout << "Running test_alphabeta..." << std::endl;
+    Board board;
+
+    Search search_negamax;
+    Move m_nm = search_negamax.find_best_move(board, 4, true, SearchAlgorithm::NEGAMAX);
+    int score_nm = search_negamax.best_score();
+    uint64_t nodes_nm = search_negamax.nodes_visited();
+    assert(m_nm != Move());
+    assert(nodes_nm == 1656992);
+
+    Search search_ab;
+    Move m_ab = search_ab.find_best_move(board, 4, true, SearchAlgorithm::ALPHABETA, false);
+    int score_ab = search_ab.best_score();
+    uint64_t nodes_ab = search_ab.nodes_visited();
+    assert(m_ab != Move());
+
+    // Alpha-beta must find the exact same evaluation score as negamax
+    assert(score_ab == score_nm);
+    // Alpha-beta must visit fewer (or at most equal) nodes than pure negamax
+    assert(nodes_ab <= nodes_nm);
+
+    Search search_ab_ordered;
+    Move m_ab_ordered = search_ab_ordered.find_best_move(board, 4, true, SearchAlgorithm::ALPHABETA, true);
+    int score_ab_ordered = search_ab_ordered.best_score();
+    uint64_t nodes_ab_ordered = search_ab_ordered.nodes_visited();
+    assert(m_ab_ordered != Move());
+
+    // Ordered alpha-beta must find the exact same score
+    assert(score_ab_ordered == score_nm);
+    // Ordered alpha-beta explores fewer nodes thanks to move ordering
+    assert(nodes_ab_ordered <= nodes_ab);
+
+    std::cout << "  Negamax nodes: " << nodes_nm
+              << ", AlphaBeta nodes: " << nodes_ab
+              << ", Ordered AlphaBeta nodes: " << nodes_ab_ordered << std::endl;
+    std::cout << "test_alphabeta passed!\n";
 }
 
 int main() {
@@ -496,6 +535,7 @@ int main() {
     test_board_evaluate();
     test_search_negamax();
     test_iterative_deepening();
+    test_alphabeta();
     std::cout << "\nAll tests passed successfully!\n";
     return 0;
 }

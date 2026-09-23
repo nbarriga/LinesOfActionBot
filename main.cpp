@@ -17,6 +17,12 @@ int main() {
     // std::cout << "uciok" << std::endl;
 
     while (std::getline(std::cin, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line.empty()) {
+            continue;
+        }
         if (line == "uci") {
             std::cout << "id name LOABot"<< std::endl;
             std::cout << "id author Nicolas A. Barriga"<< std::endl;
