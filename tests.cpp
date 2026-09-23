@@ -3,6 +3,8 @@
 #include "Search.h"
 #include "Types.h"
 #include <cassert>
+#include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -479,40 +481,182 @@ void test_iterative_deepening() {
 void test_alphabeta() {
     std::cout << "Running test_alphabeta..." << std::endl;
     Board board;
+    int depth = 4;
 
     Search search_negamax;
-    Move m_nm = search_negamax.find_best_move(board, 4, true, SearchAlgorithm::NEGAMAX);
+    Move m_nm = search_negamax.find_best_move(board, depth, true, SearchAlgorithm::NEGAMAX);
+    double time_nm = search_negamax.elapsed_time();
     int score_nm = search_negamax.best_score();
     uint64_t nodes_nm = search_negamax.nodes_visited();
     assert(m_nm != Move());
     assert(nodes_nm == 1656992);
 
+    // Alpha-beta with TT (use_tt = true)
     Search search_ab;
-    Move m_ab = search_ab.find_best_move(board, 4, true, SearchAlgorithm::ALPHABETA, false);
+    Move m_ab = search_ab.find_best_move(board, depth, true, SearchAlgorithm::ALPHABETA, false, true);
+    double time_ab = search_ab.elapsed_time();
     int score_ab = search_ab.best_score();
     uint64_t nodes_ab = search_ab.nodes_visited();
     assert(m_ab != Move());
-
-    // Alpha-beta must find the exact same evaluation score as negamax
     assert(score_ab == score_nm);
-    // Alpha-beta must visit fewer (or at most equal) nodes than pure negamax
     assert(nodes_ab <= nodes_nm);
+    assert(search_ab.tt_size() > 0);
 
+    // Alpha-beta without TT (use_tt = false)
+    Search search_ab_no_tt;
+    Move m_ab_no_tt = search_ab_no_tt.find_best_move(board, depth, true, SearchAlgorithm::ALPHABETA, false, false);
+    double time_ab_no_tt = search_ab_no_tt.elapsed_time();
+    int score_ab_no_tt = search_ab_no_tt.best_score();
+    uint64_t nodes_ab_no_tt = search_ab_no_tt.nodes_visited();
+    assert(m_ab_no_tt != Move());
+    assert(score_ab_no_tt == score_nm);
+    assert(nodes_ab_no_tt <= nodes_nm);
+    assert(search_ab_no_tt.tt_size() == 0);
+
+    // Ordered alpha-beta with TT
     Search search_ab_ordered;
-    Move m_ab_ordered = search_ab_ordered.find_best_move(board, 4, true, SearchAlgorithm::ALPHABETA, true);
+    Move m_ab_ordered = search_ab_ordered.find_best_move(board, depth, true, SearchAlgorithm::ALPHABETA, true, true);
+    double time_ab_ordered = search_ab_ordered.elapsed_time();
     int score_ab_ordered = search_ab_ordered.best_score();
     uint64_t nodes_ab_ordered = search_ab_ordered.nodes_visited();
     assert(m_ab_ordered != Move());
-
-    // Ordered alpha-beta must find the exact same score
     assert(score_ab_ordered == score_nm);
-    // Ordered alpha-beta explores fewer nodes thanks to move ordering
     assert(nodes_ab_ordered <= nodes_ab);
+    assert(search_ab_ordered.tt_size() > 0);
+
+    // Ordered alpha-beta without TT
+    Search search_ab_ordered_no_tt;
+    Move m_ab_ordered_no_tt = search_ab_ordered_no_tt.find_best_move(board, depth, true, SearchAlgorithm::ALPHABETA, true, false);
+    double time_ab_ordered_no_tt = search_ab_ordered_no_tt.elapsed_time();
+    int score_ab_ordered_no_tt = search_ab_ordered_no_tt.best_score();
+    uint64_t nodes_ab_ordered_no_tt = search_ab_ordered_no_tt.nodes_visited();
+    assert(m_ab_ordered_no_tt != Move());
+    assert(score_ab_ordered_no_tt == score_nm);
+    assert(nodes_ab_ordered_no_tt <= nodes_ab_no_tt);
+    assert(search_ab_ordered_no_tt.tt_size() == 0);
+
+    // Direct alphabeta call test with and without TT
+    Board direct_b;
+    Search direct_search;
+    int ab_score_tt = direct_search.alphabeta(direct_b, depth, -Search::INF, Search::INF, 0, false, true);
+    assert(direct_search.tt_size() > 0);
+
+    direct_search.clear_tt();
+    int ab_score_no_tt = direct_search.alphabeta(direct_b, depth, -Search::INF, Search::INF, 0, false, false);
+    assert(ab_score_no_tt == ab_score_tt);
+    assert(direct_search.tt_size() == 0);
 
     std::cout << "  Negamax nodes: " << nodes_nm
-              << ", AlphaBeta nodes: " << nodes_ab
-              << ", Ordered AlphaBeta nodes: " << nodes_ab_ordered << std::endl;
+              << ", AlphaBeta (no TT) nodes: " << nodes_ab_no_tt
+              << ", AlphaBeta (with TT) nodes: " << nodes_ab
+              << ", Ordered AlphaBeta (no TT) nodes: " << nodes_ab_ordered_no_tt
+              << ", Ordered AlphaBeta (with TT) nodes: " << nodes_ab_ordered << std::endl;
+    std::cout << std::fixed << std::setprecision(3)
+              << "  Negamax time: " << time_nm << "s"
+              << ", AlphaBeta (no TT) time: " << time_ab_no_tt << "s"
+              << ", AlphaBeta (with TT) time: " << time_ab << "s"
+              << ", Ordered AlphaBeta (no TT) time: " << time_ab_ordered_no_tt << "s"
+              << ", Ordered AlphaBeta (with TT) time: " << time_ab_ordered << "s" << std::endl;
     std::cout << "test_alphabeta passed!\n";
+}
+
+void benchmark_alphabeta(int max_depth = 6) {
+    std::cout << "\n=== Running benchmark_alphabeta (depth 1 to " << max_depth << ") ===" << std::endl;
+    Board board;
+
+    Search search_ab_no_tt;
+    search_ab_no_tt.find_best_move(board, max_depth, true, SearchAlgorithm::ALPHABETA, false, false);
+
+    Search search_ab;
+    search_ab.find_best_move(board, max_depth, true, SearchAlgorithm::ALPHABETA, false, true);
+
+    Search search_ab_ordered_no_tt;
+    search_ab_ordered_no_tt.find_best_move(board, max_depth, true, SearchAlgorithm::ALPHABETA, true, false);
+
+    Search search_ab_ordered;
+    search_ab_ordered.find_best_move(board, max_depth, true, SearchAlgorithm::ALPHABETA, true, true);
+
+    assert(search_ab.best_score() == search_ab_no_tt.best_score());
+    assert(search_ab_ordered.best_score() == search_ab_no_tt.best_score());
+    assert(search_ab_ordered_no_tt.best_score() == search_ab_no_tt.best_score());
+
+    std::cout << "\n=== Alpha-Beta Variants Benchmark (Depth 1 to " << max_depth << ") ===\n";
+    std::cout << std::left
+              << std::setw(7)  << "Depth"
+              << std::setw(28) << "AlphaBeta (no TT)"
+              << std::setw(28) << "AlphaBeta (with TT)"
+              << std::setw(28) << "Ordered AB (no TT)"
+              << std::setw(28) << "Ordered AB (with TT)"
+              << "\n";
+    std::cout << std::string(119, '-') << "\n";
+
+    const auto& stats_ab_no_tt = search_ab_no_tt.depth_stats();
+    const auto& stats_ab = search_ab.depth_stats();
+    const auto& stats_ord_no_tt = search_ab_ordered_no_tt.depth_stats();
+    const auto& stats_ord = search_ab_ordered.depth_stats();
+
+    for (int d = 1; d <= max_depth; ++d) {
+        size_t idx = d - 1;
+        auto fmt_stat = [](uint64_t nodes, double time_sec) {
+            std::ostringstream ss;
+            ss << nodes << " (" << std::fixed << std::setprecision(3) << time_sec << "s)";
+            return ss.str();
+        };
+
+        std::string col1 = (idx < stats_ab_no_tt.size()) ? fmt_stat(stats_ab_no_tt[idx].nodes, stats_ab_no_tt[idx].time_sec) : "-";
+        std::string col2 = (idx < stats_ab.size()) ? fmt_stat(stats_ab[idx].nodes, stats_ab[idx].time_sec) : "-";
+        std::string col3 = (idx < stats_ord_no_tt.size()) ? fmt_stat(stats_ord_no_tt[idx].nodes, stats_ord_no_tt[idx].time_sec) : "-";
+        std::string col4 = (idx < stats_ord.size()) ? fmt_stat(stats_ord[idx].nodes, stats_ord[idx].time_sec) : "-";
+
+        std::cout << std::left
+                  << std::setw(7)  << d
+                  << std::setw(28) << col1
+                  << std::setw(28) << col2
+                  << std::setw(28) << col3
+                  << std::setw(28) << col4
+                  << "\n";
+    }
+    std::cout << std::string(119, '-') << "\n";
+
+    std::cout << "  AlphaBeta (no TT) nodes: " << search_ab_no_tt.nodes_visited()
+              << ", AlphaBeta (with TT) nodes: " << search_ab.nodes_visited()
+              << ", Ordered AlphaBeta (no TT) nodes: " << search_ab_ordered_no_tt.nodes_visited()
+              << ", Ordered AlphaBeta (with TT) nodes: " << search_ab_ordered.nodes_visited() << std::endl;
+    std::cout << std::fixed << std::setprecision(3)
+              << "  AlphaBeta (no TT) time: " << search_ab_no_tt.elapsed_time() << "s"
+              << ", AlphaBeta (with TT) time: " << search_ab.elapsed_time() << "s"
+              << ", Ordered AlphaBeta (no TT) time: " << search_ab_ordered_no_tt.elapsed_time() << "s"
+              << ", Ordered AlphaBeta (with TT) time: " << search_ab_ordered.elapsed_time() << "s" << std::endl;
+    std::cout << "benchmark_alphabeta passed!\n";
+}
+
+void test_transposition_table() {
+    std::cout << "Running test_transposition_table..." << std::endl;
+    Board board;
+
+    Search search;
+    assert(search.tt_size() == 0);
+
+    // Search with use_tt = false should not populate TT
+    Move m_no_tt = search.find_best_move(board, 3, true, SearchAlgorithm::ALPHABETA, true, false);
+    assert(m_no_tt != Move());
+    assert(search.tt_size() == 0);
+
+    // Search with use_tt = true should populate TT
+    Move m = search.find_best_move(board, 3, true, SearchAlgorithm::ALPHABETA, true, true);
+    assert(m != Move());
+    assert(search.tt_size() > 0);
+
+    // Verify PV extraction follows TT
+    std::string pv = search.extract_pv(board, 3);
+    assert(pv.front() == '[' && pv.back() == ']');
+    std::cout << "  Extracted PV: " << pv << ", TT entries: " << search.tt_size() << std::endl;
+
+    // Verify clearing TT
+    search.clear_tt();
+    assert(search.tt_size() == 0);
+
+    std::cout << "test_transposition_table passed!\n";
 }
 
 int main() {
@@ -536,6 +680,8 @@ int main() {
     test_search_negamax();
     test_iterative_deepening();
     test_alphabeta();
+    test_transposition_table();
+    benchmark_alphabeta(7);
     std::cout << "\nAll tests passed successfully!\n";
     return 0;
 }

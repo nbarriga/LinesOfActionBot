@@ -9,6 +9,7 @@
 int main() {
     std::string line;
     Board board;
+    Search search;
     std::mt19937 rng(1337);
 
     // Tell the wrapper your engine name when it initializes
@@ -36,6 +37,7 @@ int main() {
         } 
         else if (line == "ucinewgame") {
             board = Board();
+            search.clear_tt();
         }
         else if (line.rfind("position", 0) == 0) {
             // e.g., "position startpos moves b1b3 a2c2"
@@ -93,7 +95,6 @@ int main() {
             if (moves.empty()) {
                 std::cout << "bestmove (none)" << std::endl;
             } else {
-                Search search;
                 Move chosen = search.find_best_move(board, depth);
                 std::cout << "bestmove " << chosen.to_uci() << std::endl;
             }

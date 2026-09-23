@@ -420,3 +420,10 @@ bool Board::operator!=(const Board& other) const {
     return !(*this == other);
 }
 
+uint64_t Board::hash() const {
+    uint64_t h = pieces_[0];
+    h ^= pieces_[1] + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    h ^= static_cast<uint64_t>(side_to_move_) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    return h;
+}
+

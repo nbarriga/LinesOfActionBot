@@ -3,6 +3,7 @@
 #include "Types.h"
 #include "Move.h"
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <vector>
 
@@ -44,7 +45,18 @@ public:
     bool operator==(const Board& other) const;
     bool operator!=(const Board& other) const;
 
+    uint64_t hash() const;
+
 private:
     uint64_t pieces_[2];
     Color side_to_move_;
 };
+
+namespace std {
+template <>
+struct hash<Board> {
+    size_t operator()(const Board& b) const noexcept {
+        return static_cast<size_t>(b.hash());
+    }
+};
+}
