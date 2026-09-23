@@ -11,14 +11,17 @@ int main() {
     std::mt19937 rng(1337);
 
     // Tell the wrapper your engine name when it initializes
-    std::cout << "id name LOABot\n";
-    std::cout << "id author Antigravity\n";
-    std::cout << "uciok" << std::endl;
+    // std::cout << "id name LOABot\n";
+    // std::cout << "id author Antigravity\n";
+    // std::cout << "uciok" << std::endl;
 
     while (std::getline(std::cin, line)) {
         if (line == "uci") {
-            std::cout << "id name LOABot\n";
-            std::cout << "id author Antigravity\n";
+            std::cout << "id name LOABot"<< std::endl;
+            std::cout << "id author Antigravity"<< std::endl;
+            std::cout << "option name Move Overhead type spin default 100 min 0 max 5000" << std::endl;
+            std::cout << "option name Threads type spin default 1 min 1 max 128" << std::endl;
+            std::cout << "option name Hash type spin default 16 min 1 max 1024" << std::endl;
             std::cout << "uciok" << std::endl;
         }
         else if (line == "isready") {
@@ -58,6 +61,15 @@ int main() {
         }
         else if (line == "quit") {
             break;
+        }
+        else if (line.rfind("Move Overhead", 0) == 0) {
+            std::cout << "debug: Move Overhead " << line << std::endl;
+        }
+        else if (line.rfind("Threads", 0) == 0) {
+            std::cout << "debug: Threads " << line << std::endl;
+        }
+        else if (line.rfind("Hash", 0) == 0) {
+            std::cout << "debug: Hash " << line << std::endl;
         }
     }
     return 0;
