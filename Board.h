@@ -32,6 +32,9 @@ public:
     char piece_at(uint8_t sq) const;
     void print(std::ostream& os = std::cout) const;
 
+    bool is_connected(Color c) const;
+    int evaluate() const;
+
     static Board from_fen(const std::string& fen);
     static Board from_fen(const std::string& placement, const std::string& side_to_move);
     void load_fen(const std::string& fen);

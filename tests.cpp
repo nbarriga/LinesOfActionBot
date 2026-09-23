@@ -1,5 +1,6 @@
 #include "Board.h"
 #include "Move.h"
+#include "Search.h"
 #include "Types.h"
 #include <cassert>
 #include <iostream>
@@ -357,6 +358,124 @@ void test_fen_after_move() {
     std::cout << "test_fen_after_move passed!\n";
 }
 
+void test_is_connected() {
+    std::cout << "Running test_is_connected..." << std::endl;
+    Board initial_board;
+    assert(!initial_board.is_connected(Color::BLACK));
+    assert(!initial_board.is_connected(Color::WHITE));
+
+    // Single piece board: connected
+    uint64_t single_black = (1ULL << string_to_square("d4"));
+    uint64_t single_white = (1ULL << string_to_square("a1"));
+    Board single_piece_board(single_black, single_white, Color::BLACK);
+    assert(single_piece_board.is_connected(Color::BLACK));
+    assert(single_piece_board.is_connected(Color::WHITE));
+
+    // Contiguous block of 3 pieces: d4, d5, e5 -> 8-connected
+    uint64_t block_black = (1ULL << string_to_square("d4"))
+                         | (1ULL << string_to_square("d5"))
+                         | (1ULL << string_to_square("e5"));
+    Board block_board(block_black, single_white, Color::BLACK);
+    assert(block_board.is_connected(Color::BLACK));
+
+    // Diagonal chain: c3, d4, e5 -> 8-connected
+    uint64_t diag_black = (1ULL << string_to_square("c3"))
+                        | (1ULL << string_to_square("d4"))
+                        | (1ULL << string_to_square("e5"));
+    Board diag_board(diag_black, single_white, Color::BLACK);
+    assert(diag_board.is_connected(Color::BLACK));
+
+    // Separated pieces: a1 and h8 -> not connected
+    uint64_t split_black = (1ULL << string_to_square("a1"))
+                         | (1ULL << string_to_square("h8"));
+    Board split_board(split_black, single_white, Color::BLACK);
+    assert(!split_board.is_connected(Color::BLACK));
+
+    std::cout << "test_is_connected passed!\n";
+}
+
+void test_board_evaluate() {
+    std::cout << "Running test_board_evaluate..." << std::endl;
+    Board initial_board;
+    // Initial board is completely symmetric between players
+    assert(initial_board.evaluate() == 0);
+
+    // Initial board with white to move is also symmetric (score 0)
+    initial_board.set_turn(Color::WHITE);
+    assert(initial_board.evaluate() == 0);
+
+    // Winning connected position for Black
+    uint64_t conn_black = (1ULL << string_to_square("d4"))
+                        | (1ULL << string_to_square("d5"));
+    uint64_t split_white = (1ULL << string_to_square("a1"))
+                         | (1ULL << string_to_square("h8"));
+    Board win_board(conn_black, split_white, Color::BLACK);
+    assert(win_board.evaluate() == 100000);
+
+    // From White's perspective, Black is connected so White loses
+    win_board.set_turn(Color::WHITE);
+    assert(win_board.evaluate() == -100000);
+
+    std::cout << "test_board_evaluate passed!\n";
+}
+
+void test_search_negamax() {
+    std::cout << "Running test_search_negamax..." << std::endl;
+    Board board;
+    Search search;
+
+    // Depth 1: Root (1) + 36 legal moves = 37 nodes visited
+    Move m1 = search.find_best_move(board, 1, false);
+    assert(m1 != Move());
+    assert(search.nodes_visited() == 37);
+
+    // Depth 2: Root (1) + 36 depth-1 + 1244 depth-2 = 1281 nodes visited
+    search.reset();
+    Move m2 = search.find_best_move(board, 2, false);
+    assert(m2 != Move());
+    assert(search.nodes_visited() == 1 + 36 + 1244);
+
+    // Test finding an immediate winning move:
+    // b4 and d4 for Black, g4 and a1 for White
+    // Line on rank 4 has 3 pieces (b4, d4, g4).
+    // b4 moves 3 squares east to e4 (jumping over friendly d4).
+    // e4 and d4 form a connected group -> instant win!
+    uint64_t winning_black = (1ULL << string_to_square("b4"))
+                           | (1ULL << string_to_square("d4"));
+    uint64_t winning_white = (1ULL << string_to_square("g4"))
+                           | (1ULL << string_to_square("a1"));
+    Board win_puzzle(winning_black, winning_white, Color::BLACK);
+    Search win_search;
+    Move win_move = win_search.find_best_move(win_puzzle, 1, false);
+    assert(win_move.to_uci() == "b4e4");
+    assert(win_search.best_score() >= 99990);
+
+    std::cout << "test_search_negamax passed!\n";
+}
+
+void test_iterative_deepening() {
+    std::cout << "Running test_iterative_deepening..." << std::endl;
+    Board board;
+    Search search;
+
+    // Standard depth 2 search without iterative deepening: 1281 nodes
+    Move m_std = search.find_best_move(board, 2, false);
+    uint64_t nodes_std = search.nodes_visited();
+    assert(nodes_std == 1281);
+
+    // Iterative deepening search to depth 2:
+    // Iteration 1: 37 nodes (1 root + 36 depth-0 leaves)
+    // Iteration 2: 1281 nodes (1 root + 36 depth-1 + 1244 depth-0 leaves)
+    // Total nodes: 37 + 1281 = 1318 nodes
+    search.reset();
+    Move m_id = search.find_best_move(board, 2, true);
+    uint64_t nodes_id = search.nodes_visited();
+    assert(nodes_id == 37 + 1281);
+    assert(m_id == m_std);
+
+    std::cout << "test_iterative_deepening passed!\n";
+}
+
 int main() {
     std::cout << "=== Running Lines of Action Bot Tests ===\n";
     test_initial_board();
@@ -373,6 +492,10 @@ int main() {
     test_fen_initial();
     test_fen_side_to_move();
     test_fen_after_move();
+    test_is_connected();
+    test_board_evaluate();
+    test_search_negamax();
+    test_iterative_deepening();
     std::cout << "\nAll tests passed successfully!\n";
     return 0;
 }

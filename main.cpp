@@ -1,5 +1,6 @@
 #include "Board.h"
 #include "Move.h"
+#include "Search.h"
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -18,7 +19,7 @@ int main() {
     while (std::getline(std::cin, line)) {
         if (line == "uci") {
             std::cout << "id name LOABot"<< std::endl;
-            std::cout << "id author Antigravity"<< std::endl;
+            std::cout << "id author Nicolas A. Barriga"<< std::endl;
             std::cout << "option name Move Overhead type spin default 100 min 0 max 5000" << std::endl;
             std::cout << "option name Threads type spin default 1 min 1 max 128" << std::endl;
             std::cout << "option name Hash type spin default 16 min 1 max 1024" << std::endl;
@@ -68,12 +69,26 @@ int main() {
             }
         } 
         else if (line.rfind("go", 0) == 0) {
+            std::istringstream iss(line);
+            std::string token;
+            iss >> token; // "go"
+            int depth = 2; // Default depth for pure negamax
+            while (iss >> token) {
+                if (token == "depth") {
+                    int d;
+                    if (iss >> d) {
+                        depth = d;
+                    }
+                }
+            }
+            if (depth < 1) depth = 1;
+
             auto moves = board.generate_legal_moves();
             if (moves.empty()) {
                 std::cout << "bestmove (none)" << std::endl;
             } else {
-                std::uniform_int_distribution<size_t> dist(0, moves.size() - 1);
-                const Move& chosen = moves[dist(rng)];
+                Search search;
+                Move chosen = search.find_best_move(board, depth);
                 std::cout << "bestmove " << chosen.to_uci() << std::endl;
             }
         } 
@@ -94,6 +109,8 @@ int main() {
         }
         else if (line.rfind("Hash", 0) == 0) {
             std::cout << "debug: Hash " << line << std::endl;
+        }else{
+            std::cout << "debug: Unknown command " << line << std::endl;
         }
     }
     return 0;

@@ -224,6 +224,98 @@ void Board::print(std::ostream& os) const {
     os << "Side to move: " << (side_to_move_ == Color::BLACK ? "Black" : "White") << "\n";
 }
 
+namespace {
+
+constexpr uint64_t NOT_A_FILE = 0xFEFEFEFEFEFEFEFEULL;
+constexpr uint64_t NOT_H_FILE = 0x7F7F7F7F7F7F7F7FULL;
+
+int evaluate_color(uint64_t bb) {
+    int count = __builtin_popcountll(bb);
+    if (count <= 1) return 1000;
+
+    int sum_f = 0;
+    int sum_r = 0;
+    uint64_t temp = bb;
+    while (temp) {
+        uint8_t sq = static_cast<uint8_t>(__builtin_ctzll(temp));
+        sum_f += square_file(sq);
+        sum_r += square_rank(sq);
+        temp &= temp - 1;
+    }
+
+    int total_dist_scaled = 0;
+    temp = bb;
+    int adjacencies = 0;
+
+    while (temp) {
+        uint8_t sq = static_cast<uint8_t>(__builtin_ctzll(temp));
+        int f = square_file(sq);
+        int r = square_rank(sq);
+        total_dist_scaled += std::abs(count * f - sum_f) + std::abs(count * r - sum_r);
+
+        uint64_t piece_mask = 1ULL << sq;
+        uint64_t neighbors = (piece_mask << 8)
+            | (piece_mask >> 8)
+            | ((piece_mask & NOT_H_FILE) << 1)
+            | ((piece_mask & NOT_A_FILE) >> 1)
+            | ((piece_mask & NOT_H_FILE) << 9)
+            | ((piece_mask & NOT_A_FILE) << 7)
+            | ((piece_mask & NOT_H_FILE) >> 7)
+            | ((piece_mask & NOT_A_FILE) >> 9);
+        adjacencies += __builtin_popcountll(neighbors & bb);
+
+        temp &= temp - 1;
+    }
+
+    int avg_dist = total_dist_scaled / count;
+    return -avg_dist * 10 + (adjacencies / 2) * 8 + count * 5;
+}
+
+} // anonymous namespace
+
+bool Board::is_connected(Color c) const {
+    uint64_t bb = pieces(c);
+    if (!bb) return false;
+    if ((bb & (bb - 1)) == 0) return true;
+
+    uint8_t start_sq = static_cast<uint8_t>(__builtin_ctzll(bb));
+    uint64_t connected = (1ULL << start_sq);
+    uint64_t new_connected = connected;
+
+    do {
+        connected = new_connected;
+        uint64_t dilated = connected
+            | (connected << 8)
+            | (connected >> 8)
+            | ((connected & NOT_H_FILE) << 1)
+            | ((connected & NOT_A_FILE) >> 1)
+            | ((connected & NOT_H_FILE) << 9)
+            | ((connected & NOT_A_FILE) << 7)
+            | ((connected & NOT_H_FILE) >> 7)
+            | ((connected & NOT_A_FILE) >> 9);
+        new_connected = dilated & bb;
+    } while (new_connected != connected);
+
+    return connected == bb;
+}
+
+int Board::evaluate() const {
+    bool me_connected = is_connected(side_to_move_);
+    bool opp_connected = is_connected(~side_to_move_);
+
+    if (me_connected && !opp_connected) return 100000;
+    if (opp_connected && !me_connected) return -100000;
+    if (me_connected && opp_connected) {
+        // Both connected: the player who just moved won
+        return -100000;
+    }
+
+    int my_score = evaluate_color(pieces(side_to_move_));
+    int opp_score = evaluate_color(pieces(~side_to_move_));
+
+    return my_score - opp_score;
+}
+
 Board Board::from_fen(const std::string& fen) {
     std::istringstream iss(fen);
     std::string placement;
