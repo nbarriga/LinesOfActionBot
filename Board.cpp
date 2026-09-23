@@ -1,6 +1,8 @@
 #include "Board.h"
 #include <cassert>
+#include <cctype>
 #include <cstdlib>
+#include <sstream>
 
 namespace {
 
@@ -222,6 +224,100 @@ void Board::print(std::ostream& os) const {
     os << "Side to move: " << (side_to_move_ == Color::BLACK ? "Black" : "White") << "\n";
 }
 
+Board Board::from_fen(const std::string& fen) {
+    std::istringstream iss(fen);
+    std::string placement;
+    std::string side = "w";
+    if (iss >> placement) {
+        iss >> side;
+    }
+    return from_fen(placement, side);
+}
+
+Board Board::from_fen(const std::string& placement, const std::string& side_to_move) {
+    uint64_t black_bb = 0;
+    uint64_t white_bb = 0;
+
+    int rank = 7;
+    int file = 0;
+
+    for (char ch : placement) {
+        if (ch == '/') {
+            --rank;
+            file = 0;
+        } else if (ch >= '1' && ch <= '8') {
+            file += (ch - '0');
+        } else if (file < 8 && rank >= 0) {
+            uint8_t sq = make_square(static_cast<uint8_t>(file), static_cast<uint8_t>(rank));
+            uint64_t mask = 1ULL << sq;
+            if (ch == 'O' || ch == 'o') {
+                white_bb |= mask;
+            } else if (std::isupper(static_cast<unsigned char>(ch))) {
+                black_bb |= mask;
+            } else if (std::islower(static_cast<unsigned char>(ch))) {
+                white_bb |= mask;
+            }
+            ++file;
+        }
+    }
+
+    Color to_move = Color::BLACK;
+    if (!side_to_move.empty()) {
+        char c = static_cast<char>(std::tolower(static_cast<unsigned char>(side_to_move[0])));
+        if (c == 'b' || c == 'o') {
+            to_move = Color::WHITE;
+        } else {
+            to_move = Color::BLACK;
+        }
+    }
+
+    return Board(black_bb, white_bb, to_move);
+}
+
+void Board::load_fen(const std::string& fen) {
+    *this = from_fen(fen);
+}
+
+void Board::load_fen(const std::string& placement, const std::string& side_to_move) {
+    *this = from_fen(placement, side_to_move);
+}
+
+std::string Board::to_fen() const {
+    std::string fen;
+    for (int rank = 7; rank >= 0; --rank) {
+        int empty_count = 0;
+        for (int file = 0; file < 8; ++file) {
+            uint8_t sq = make_square(static_cast<uint8_t>(file), static_cast<uint8_t>(rank));
+            uint64_t mask = 1ULL << sq;
+            if (pieces_[static_cast<size_t>(Color::BLACK)] & mask) {
+                if (empty_count > 0) {
+                    fen += std::to_string(empty_count);
+                    empty_count = 0;
+                }
+                fen += 'L';
+            } else if (pieces_[static_cast<size_t>(Color::WHITE)] & mask) {
+                if (empty_count > 0) {
+                    fen += std::to_string(empty_count);
+                    empty_count = 0;
+                }
+                fen += 'l';
+            } else {
+                ++empty_count;
+            }
+        }
+        if (empty_count > 0) {
+            fen += std::to_string(empty_count);
+        }
+        if (rank > 0) {
+            fen += '/';
+        }
+    }
+    fen += ' ';
+    fen += (side_to_move_ == Color::BLACK ? 'w' : 'b');
+    fen += " - - 0 1";
+    return fen;
+}
+
 bool Board::operator==(const Board& other) const {
     return pieces_[0] == other.pieces_[0] &&
            pieces_[1] == other.pieces_[1] &&
@@ -231,3 +327,4 @@ bool Board::operator==(const Board& other) const {
 bool Board::operator!=(const Board& other) const {
     return !(*this == other);
 }
+

@@ -298,6 +298,65 @@ void test_perft() {
     std::cout << "test_perft passed!\n";
 }
 
+void test_fen_initial() {
+    std::cout << "Running test_fen_initial..." << std::endl;
+    Board initial_board;
+
+    std::string fen = "1LLLLLL1/l6l/l6l/l6l/l6l/l6l/l6l/1LLLLLL1 w - - 0 1";
+    Board from_fen_board = Board::from_fen(fen);
+
+    assert(from_fen_board == initial_board);
+    assert(from_fen_board.black_pieces() == Board::INITIAL_BLACK);
+    assert(from_fen_board.white_pieces() == Board::INITIAL_WHITE);
+    assert(from_fen_board.turn() == Color::BLACK);
+
+    // Verify to_fen reproduces initial FEN
+    assert(initial_board.to_fen() == fen);
+    assert(from_fen_board.to_fen() == fen);
+
+    // Also test two-argument overload
+    Board from_fen_parts = Board::from_fen("1LLLLLL1/l6l/l6l/l6l/l6l/l6l/l6l/1LLLLLL1", "w");
+    assert(from_fen_parts == initial_board);
+
+    std::cout << "test_fen_initial passed!\n";
+}
+
+void test_fen_side_to_move() {
+    std::cout << "Running test_fen_side_to_move..." << std::endl;
+    std::string fen_black = "1LLLLLL1/l6l/l6l/l6l/l6l/l6l/l6l/1LLLLLL1 w - - 0 1";
+    std::string fen_white = "1LLLLLL1/l6l/l6l/l6l/l6l/l6l/l6l/1LLLLLL1 b - - 0 1";
+
+    Board b1 = Board::from_fen(fen_black);
+    assert(b1.turn() == Color::BLACK);
+
+    Board b2 = Board::from_fen(fen_white);
+    assert(b2.turn() == Color::WHITE);
+    assert(b2.black_pieces() == Board::INITIAL_BLACK);
+    assert(b2.white_pieces() == Board::INITIAL_WHITE);
+
+    std::cout << "test_fen_side_to_move passed!\n";
+}
+
+void test_fen_after_move() {
+    std::cout << "Running test_fen_after_move..." << std::endl;
+    Board board;
+    board.apply_move(Move::from_uci("d1d3"));
+
+    // After d1d3, side to move is White (represented as 'b' in FEN)
+    assert(board.turn() == Color::WHITE);
+    assert(board.piece_at(string_to_square("d1")) == '-');
+    assert(board.piece_at(string_to_square("d3")) == 'X');
+
+    std::string fen = board.to_fen();
+    Board restored = Board::from_fen(fen);
+    assert(restored == board);
+    assert(restored.turn() == Color::WHITE);
+    assert(restored.piece_at(string_to_square("d1")) == '-');
+    assert(restored.piece_at(string_to_square("d3")) == 'X');
+
+    std::cout << "test_fen_after_move passed!\n";
+}
+
 int main() {
     std::cout << "=== Running Lines of Action Bot Tests ===\n";
     test_initial_board();
@@ -311,6 +370,10 @@ int main() {
     test_enemy_block();
     test_captures_and_friendly_destinations();
     test_perft();
+    test_fen_initial();
+    test_fen_side_to_move();
+    test_fen_after_move();
     std::cout << "\nAll tests passed successfully!\n";
     return 0;
 }
+

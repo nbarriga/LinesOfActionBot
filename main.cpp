@@ -32,12 +32,33 @@ int main() {
         }
         else if (line.rfind("position", 0) == 0) {
             // e.g., "position startpos moves b1b3 a2c2"
+            // or "position fen 1LLLLLL1/l6l/l6l/l6l/l6l/l6l/l6l/1LLLLLL1 w - - 0 1 moves d1d3"
             std::istringstream iss(line);
             std::string token;
             iss >> token; // "position"
-            if (iss >> token && token == "startpos") {
-                board = Board();
-                if (iss >> token && token == "moves") {
+            if (iss >> token) {
+                if (token == "startpos") {
+                    board = Board();
+                    iss >> token;
+                } else if (token == "fen") {
+                    std::string fen_placement;
+                    if (iss >> fen_placement) {
+                        std::string fen_color = "w";
+                        bool has_color = false;
+                        while (iss >> token) {
+                            if (token == "moves") {
+                                break;
+                            }
+                            if (!has_color) {
+                                fen_color = token;
+                                has_color = true;
+                            }
+                        }
+                        board = Board::from_fen(fen_placement, fen_color);
+                    }
+                }
+
+                if (token == "moves") {
                     std::string move_str;
                     while (iss >> move_str) {
                         Move m = Move::from_uci(move_str);
@@ -58,6 +79,9 @@ int main() {
         } 
         else if (line == "d" || line == "print") {
             board.print();
+        }
+        else if (line == "fen") {
+            std::cout << board.to_fen() << std::endl;
         }
         else if (line == "quit") {
             break;

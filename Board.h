@@ -32,6 +32,12 @@ public:
     char piece_at(uint8_t sq) const;
     void print(std::ostream& os = std::cout) const;
 
+    static Board from_fen(const std::string& fen);
+    static Board from_fen(const std::string& placement, const std::string& side_to_move);
+    void load_fen(const std::string& fen);
+    void load_fen(const std::string& placement, const std::string& side_to_move);
+    std::string to_fen() const;
+
     bool operator==(const Board& other) const;
     bool operator!=(const Board& other) const;
 
