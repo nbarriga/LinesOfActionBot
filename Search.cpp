@@ -482,6 +482,12 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                       << pv_str << "   "
                       << best_score_ << "\n";
 
+            // If a forced win (or loss) is found, the game is solved from this position.
+            // Further iterative deepening cannot improve upon a proven shortest win.
+            if (std::abs(best_score_) >= 90000) {
+                break;
+            }
+
             // Check soft time limit & predict if next depth can complete
             if (time_limited_) {
                 double iter_time_sec = elapsed_sec - prev_elapsed_sec;

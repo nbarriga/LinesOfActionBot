@@ -791,6 +791,35 @@ void test_search_time_controls() {
     std::cout << "test_search_time_controls passed!\n";
 }
 
+void test_search_terminal_early_exit() {
+    std::cout << "Running test_search_terminal_early_exit..." << std::endl;
+
+    // Black pieces at b4, d4, f4 (unconnected). Rank 4 has 3 pieces, so b4 can jump over d4 to e4.
+    // After b4e4, pieces are at d4, e4, f4 (connected!).
+    // White pieces are split at a1, h8.
+    uint64_t black_pieces = (1ULL << string_to_square("b4"))
+                          | (1ULL << string_to_square("d4"))
+                          | (1ULL << string_to_square("f4"));
+    uint64_t white_pieces = (1ULL << string_to_square("a1"))
+                          | (1ULL << string_to_square("h8"));
+
+    Board board(black_pieces, white_pieces, Color::BLACK);
+    assert(!board.is_connected(Color::BLACK));
+
+    Search search;
+    // Request depth 10 search with iterative deepening.
+    // Since depth 1 immediately finds a forced win in 1 ply (score 99999),
+    // it should stop immediately at depth 1 and not search depths 2..10.
+    Move best = search.find_best_move(board, 10, true, SearchAlgorithm::ALPHABETA, true, true);
+
+    assert(search.best_score() >= 90000);
+    assert(search.depth_stats().size() == 1);
+    assert(search.depth_stats()[0].depth == 1);
+    assert(best.to_uci() == "b4e4");
+
+    std::cout << "test_search_terminal_early_exit passed!\n";
+}
+
 int main() {
     std::cout << "=== Running Lines of Action Bot Tests ===\n";
     test_initial_board();
@@ -816,6 +845,7 @@ int main() {
     test_transposition_table();
     test_time_manager();
     test_search_time_controls();
+    test_search_terminal_early_exit();
     benchmark_alphabeta(7);
     std::cout << "\nAll tests passed successfully!\n";
     return 0;
