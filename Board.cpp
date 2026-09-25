@@ -103,10 +103,10 @@ const MoveLookupTables LOOKUP_TABLES;
 } // anonymous namespace
 
 Board::Board()
-    : pieces_{INITIAL_BLACK, INITIAL_WHITE}, side_to_move_(Color::BLACK) {}
+    : pieces_{INITIAL_BLACK, INITIAL_WHITE}, side_to_move_(Color::BLACK), ply_count_(0) {}
 
 Board::Board(uint64_t black, uint64_t white, Color to_move)
-    : pieces_{black, white}, side_to_move_(to_move) {}
+    : pieces_{black, white}, side_to_move_(to_move), ply_count_(0) {}
 
 void Board::apply_move(const Move& move) {
     uint8_t from = move.from();
@@ -132,6 +132,7 @@ void Board::apply_move(const Move& move) {
 
     // Toggle turn to next player
     side_to_move_ = ~side_to_move_;
+    ply_count_++;
 }
 
 void Board::generate_legal_moves(std::vector<Move>& moves) const {
@@ -339,8 +340,17 @@ Board Board::from_fen(const std::string& fen) {
     std::istringstream iss(fen);
     std::string placement;
     std::string side = "w";
+    std::string castling, ep;
+    int halfmove = 0, fullmove = 1;
     if (iss >> placement) {
-        iss >> side;
+        if (iss >> side) {
+            Board b = from_fen(placement, side);
+            if (iss >> castling >> ep >> halfmove >> fullmove) {
+                int plies = std::max(0, (fullmove - 1) * 2 + (b.turn() == Color::WHITE ? 1 : 0));
+                b.set_ply_count(plies);
+            }
+            return b;
+        }
     }
     return from_fen(placement, side);
 }
@@ -425,7 +435,7 @@ std::string Board::to_fen() const {
     }
     fen += ' ';
     fen += (side_to_move_ == Color::BLACK ? 'w' : 'b');
-    fen += " - - 0 1";
+    fen += " - - 0 " + std::to_string((ply_count_ / 2) + 1);
     return fen;
 }
 

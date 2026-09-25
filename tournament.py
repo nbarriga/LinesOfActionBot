@@ -12,7 +12,8 @@ Expected UCI Protocol Commands:
   - ucinewgame            : Resets engine state / transposition table for a new game
   - setoption name ...    : Sets engine configuration (Algorithm, Depth, UseTT, OrderMoves)
   - position startpos moves ... : Sets up the board position and applies moves
-  - go [depth N]          : Starts search; bot responds with 'bestmove <move>' or
+  - go [depth N] [wtime W btime B winc I binc I] [movetime M] :
+                            Starts search; bot responds with 'bestmove <move>' or
                             'info string gameover <winner>_wins' + 'bestmove (none)'
   - legalmoves            : Returns space-separated legal moves (needed for --random-moves)
   - quit                  : Exits the engine process cleanly
@@ -100,13 +101,35 @@ class UCIEngine:
             return None
         return self.process.stdout.readline()
 
-    def get_move(self, position_cmd: str, depth: Optional[int] = None, timeout: float = 30.0) -> Tuple[Optional[str], Optional[str]]:
+    def get_move(
+        self,
+        position_cmd: str,
+        depth: Optional[int] = None,
+        movetime: Optional[int] = None,
+        wtime: Optional[int] = None,
+        btime: Optional[int] = None,
+        winc: Optional[int] = None,
+        binc: Optional[int] = None,
+        timeout: float = 60.0,
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Sends position and go, returns (bestmove, gameover_message).
         """
         self.send_command(position_cmd)
-        go_cmd = f"go depth {depth}" if depth else "go"
-        self.send_command(go_cmd)
+        go_parts = ["go"]
+        if depth:
+            go_parts.append(f"depth {depth}")
+        if movetime:
+            go_parts.append(f"movetime {movetime}")
+        if wtime is not None:
+            go_parts.append(f"wtime {wtime}")
+        if btime is not None:
+            go_parts.append(f"btime {btime}")
+        if winc is not None:
+            go_parts.append(f"winc {winc}")
+        if binc is not None:
+            go_parts.append(f"binc {binc}")
+        self.send_command(" ".join(go_parts))
 
         bestmove = None
         gameover_msg = None
@@ -191,6 +214,9 @@ def play_game(
     white_bot: UCIEngine,
     max_plies: int = 60,
     depth: Optional[int] = None,
+    movetime: Optional[int] = None,
+    base_time: Optional[int] = None,
+    inc_time: Optional[int] = None,
     opening_moves: Optional[List[str]] = None,
     verbose: bool = False,
 ) -> Dict:
@@ -201,6 +227,10 @@ def play_game(
     winner = None
     reason = None
     gameover_msg = None
+
+    btime = base_time
+    wtime = base_time
+    inc = inc_time or 0
 
     ply = len(moves) + 1
 
@@ -214,7 +244,29 @@ def play_game(
         else:
             pos_cmd = "position startpos"
 
-        bestmove, go_msg = current_bot.get_move(pos_cmd, depth=depth)
+        t_start = time.time()
+        bestmove, go_msg = current_bot.get_move(
+            pos_cmd,
+            depth=depth,
+            movetime=movetime,
+            wtime=wtime,
+            btime=btime,
+            winc=inc if base_time is not None else None,
+            binc=inc if base_time is not None else None,
+        )
+        t_spent_ms = int((time.time() - t_start) * 1000)
+
+        if base_time is not None:
+            if is_black_turn:
+                if t_spent_ms > btime and not winner:
+                    winner = "white"
+                    reason = "Black flagged (ran out of time)"
+                btime = max(0, btime - t_spent_ms) + inc
+            else:
+                if t_spent_ms > wtime and not winner:
+                    winner = "black"
+                    reason = "White flagged (ran out of time)"
+                wtime = max(0, wtime - t_spent_ms) + inc
 
         if go_msg:
             gameover_msg = go_msg
@@ -230,7 +282,7 @@ def play_game(
                 else:
                     winner = "draw"
                     reason = gameover_msg
-            else:
+            elif not winner:
                 # Resignation or crash
                 winner = "white" if is_black_turn else "black"
                 reason = f"{player_color.capitalize()} resigned or returned no move"
@@ -239,7 +291,11 @@ def play_game(
         moves.append(bestmove)
         if verbose:
             move_num = (ply + 1) // 2
-            print(f"  Ply {ply:2d} ({player_color[:1].upper()}): {bestmove}")
+            clk_str = f" [B:{btime}ms W:{wtime}ms]" if base_time is not None else ""
+            print(f"  Ply {ply:2d} ({player_color[:1].upper()}): {bestmove} ({t_spent_ms}ms){clk_str}")
+
+        if winner:
+            break
 
         ply += 1
 
@@ -287,7 +343,7 @@ Expected UCI Protocol Commands:
   position startpos [moves <m1> <m2> ...]
     Sets current board position (initial setup) and applies moves (e.g. 'b1d3 a2c4').
 
-  go [depth <N>]
+  go [depth <N>] [wtime <W> btime <B> winc <wI> binc <bI>] [movetime <M>]
     Starts search from current position. Engine responds with:
       bestmove <move>                     (e.g. 'bestmove b1d3')
     If game is over or engine resigns (no legal moves / terminal state):
@@ -319,6 +375,9 @@ Expected UCI Protocol Commands:
     parser.add_argument("--bot2-opt", action="append", default=[], help="UCI option for Bot 2")
     parser.add_argument("--games", type=int, default=10, help="Total number of games to play (paired, default: 10)")
     parser.add_argument("--depth", type=int, default=None, help="Search depth override passed to 'go depth N'")
+    parser.add_argument("--movetime", type=int, default=None, help="Fixed move time in ms passed to 'go movetime M'")
+    parser.add_argument("--time", type=int, default=None, help="Initial clock time in ms (e.g. 180000 for 3m)")
+    parser.add_argument("--inc", type=int, default=0, help="Time increment in ms per move (e.g. 2000 for 2s)")
     parser.add_argument("--max-plies", type=int, default=60, help="Maximum plies before declaring a draw (default: 60)")
     parser.add_argument("--random-moves", "--random-plies", type=int, default=0,
                         help="Number of random moves to play first. The same moves are used for each paired match.")
@@ -402,7 +461,16 @@ Expected UCI Protocol Commands:
         if game_idx <= args.games:
             print(f"\nGame {game_idx}/{args.games}: [Black] {args.bot1_name} vs [White] {args.bot2_name} (opening: {op_str})")
             t0 = time.time()
-            res = play_game(bot1, bot2, max_plies=args.max_plies, depth=args.depth, opening_moves=opening, verbose=args.verbose)
+            res = play_game(
+                bot1, bot2,
+                max_plies=args.max_plies,
+                depth=args.depth,
+                movetime=args.movetime,
+                base_time=args.time,
+                inc_time=args.inc,
+                opening_moves=opening,
+                verbose=args.verbose,
+            )
             duration = time.time() - t0
 
             if res["winner"] == "black":
@@ -424,7 +492,16 @@ Expected UCI Protocol Commands:
         if game_idx <= args.games:
             print(f"\nGame {game_idx}/{args.games}: [Black] {args.bot2_name} vs [White] {args.bot1_name} (opening: {op_str})")
             t0 = time.time()
-            res = play_game(bot2, bot1, max_plies=args.max_plies, depth=args.depth, opening_moves=opening, verbose=args.verbose)
+            res = play_game(
+                bot2, bot1,
+                max_plies=args.max_plies,
+                depth=args.depth,
+                movetime=args.movetime,
+                base_time=args.time,
+                inc_time=args.inc,
+                opening_moves=opening,
+                verbose=args.verbose,
+            )
             duration = time.time() - t0
 
             if res["winner"] == "black":

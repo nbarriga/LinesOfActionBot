@@ -13,6 +13,7 @@ void Search::reset() {
     nodes_visited_ = 0;
     best_score_ = 0;
     elapsed_time_ = 0.0;
+    stop_search_ = false;
     depth_stats_.clear();
 }
 
@@ -34,6 +35,15 @@ const std::vector<DepthStats>& Search::depth_stats() const {
 
 int Search::negamax(Board& board, int depth, int ply) {
     ++nodes_visited_;
+
+    if (time_limited_ && (nodes_visited_ & 2047) == 0) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_);
+        if (elapsed >= hard_deadline_ms_) {
+            stop_search_ = true;
+            return 0;
+        }
+    }
 
     // Check terminal conditions
     bool me_connected = board.is_connected(board.turn());
@@ -62,6 +72,9 @@ int Search::negamax(Board& board, int depth, int ply) {
         next_board.apply_move(move);
 
         int score = -negamax(next_board, depth - 1, ply + 1);
+        if (stop_search_) {
+            return 0;
+        }
         if (score > max_score) {
             max_score = score;
         }
@@ -146,6 +159,15 @@ void sort_remaining_moves(const Board& board, std::vector<Move>& moves, size_t s
 int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, bool order_moves, bool use_tt) {
     ++nodes_visited_;
 
+    if (time_limited_ && (nodes_visited_ & 2047) == 0) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_);
+        if (elapsed >= hard_deadline_ms_) {
+            stop_search_ = true;
+            return 0;
+        }
+    }
+
     // Check terminal conditions
     bool me_connected = board.is_connected(board.turn());
     bool opp_connected = board.is_connected(~board.turn());
@@ -200,6 +222,9 @@ int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, boo
             next_board.apply_move(moves[0]);
 
             int score = -alphabeta(next_board, depth - 1, -beta, -alpha, ply + 1, order_moves, use_tt);
+            if (stop_search_) {
+                return 0;
+            }
             if (score > max_score) {
                 max_score = score;
                 best_move = moves[0];
@@ -209,7 +234,7 @@ int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, boo
             }
             if (score >= beta) {
                 // Beta cutoff! Don't waste time sorting or searching remaining moves
-                if (use_tt) {
+                if (use_tt && !stop_search_) {
                     tt_[board] = TTEntry{depth, score, TTFlag::UPPER_BOUND, best_move};
                 }
                 return score;
@@ -230,6 +255,9 @@ int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, boo
         next_board.apply_move(moves[i]);
 
         int score = -alphabeta(next_board, depth - 1, -beta, -alpha, ply + 1, order_moves, use_tt);
+        if (stop_search_) {
+            return 0;
+        }
         if (score > max_score) {
             max_score = score;
             best_move = moves[i];
@@ -238,7 +266,7 @@ int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, boo
             alpha = score;
         }
         if (score >= beta) {
-            if (use_tt) {
+            if (use_tt && !stop_search_) {
                 tt_[board] = TTEntry{depth, score, TTFlag::UPPER_BOUND, best_move};
             }
             return score;
@@ -246,7 +274,7 @@ int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, boo
     }
 
     // 5. Store entry in TT
-    if (use_tt) {
+    if (use_tt && !stop_search_) {
         TTFlag flag;
         if (max_score <= orig_alpha) {
             flag = TTFlag::LOWER_BOUND;
@@ -260,8 +288,19 @@ int Search::alphabeta(Board& board, int depth, int alpha, int beta, int ply, boo
 }
 
 Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
-                           SearchAlgorithm algo, bool order_moves, bool use_tt) {
+                           SearchAlgorithm algo, bool order_moves, bool use_tt,
+                           const SearchLimits& limits) {
     reset();
+
+    time_limited_ = limits.time_limited;
+    soft_deadline_ms_ = std::chrono::milliseconds(limits.soft_time_ms);
+    hard_deadline_ms_ = std::chrono::milliseconds(limits.hard_time_ms);
+    start_time_ = std::chrono::high_resolution_clock::now();
+
+    int target_depth = depth;
+    if (limits.max_depth > 0) {
+        target_depth = std::min(target_depth, limits.max_depth);
+    }
 
     Color winner;
     if (board.is_game_over(winner)) {
@@ -274,16 +313,16 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
     }
 
     Move best_move = moves[0];
-    int start_depth = iterative_deepening ? 1 : depth;
+    int start_depth = iterative_deepening ? 1 : target_depth;
 
     if (iterative_deepening) {
         std::cerr << "Depth \ttime\tNodes\tnodes/sec \t\tAvg.-BF  Principal var.   eval\n";
     }
 
-    auto start_time = std::chrono::high_resolution_clock::now();
     uint64_t prev_nodes = 0;
+    double prev_elapsed_sec = 0.0;
 
-    for (int d = start_depth; d <= depth; ++d) {
+    for (int d = start_depth; d <= target_depth; ++d) {
         ++nodes_visited_;
 
         int max_score = -INF;
@@ -291,6 +330,10 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
         int alpha = -INF;
         int beta = INF;
         size_t start_idx = 0;
+
+        bool new_best_completed_at_this_depth = false;
+        Move completed_better_move = Move();
+        int completed_better_score = -INF;
 
         if (algo == SearchAlgorithm::ALPHABETA) {
             Move tt_move;
@@ -310,6 +353,9 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                     next_board.apply_move(moves[0]);
 
                     int score = -alphabeta(next_board, d - 1, -beta, -alpha, 1, order_moves, use_tt);
+                    if (stop_search_) {
+                        break;
+                    }
                     if (score > max_score) {
                         max_score = score;
                         current_best = moves[0];
@@ -320,10 +366,10 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                     if (score >= beta) {
                         best_score_ = score;
                         best_move = current_best;
-                        if (use_tt) {
+                        if (use_tt && !stop_search_) {
                             tt_[board] = TTEntry{d, score, TTFlag::UPPER_BOUND, best_move};
                         }
-                        continue;
+                        goto iteration_stats;
                     }
                     start_idx = 1;
                 }
@@ -345,9 +391,21 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                 score = -alphabeta(next_board, d - 1, -beta, -alpha, 1, order_moves, use_tt);
             }
 
+            if (stop_search_) {
+                // Interrupted while searching moves[i]!
+                // moves[i] was not completely evaluated, so discard its score.
+                break;
+            }
+
+            // moves[i] finished evaluation completely!
             if (score > max_score) {
                 max_score = score;
                 current_best = moves[i];
+                if (i > 0) {
+                    new_best_completed_at_this_depth = true;
+                    completed_better_move = moves[i];
+                    completed_better_score = score;
+                }
             }
             if (algo == SearchAlgorithm::ALPHABETA) {
                 if (score > alpha) {
@@ -357,6 +415,17 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                     break;
                 }
             }
+        }
+
+        if (stop_search_) {
+            // Timeout occurred at depth d!
+            if (new_best_completed_at_this_depth) {
+                // A new move was fully evaluated at depth d and beat the previous best.
+                best_move = completed_better_move;
+                best_score_ = completed_better_score;
+            }
+            // Otherwise, best_move remains the one from the previous completed depth.
+            break;
         }
 
         best_score_ = max_score;
@@ -371,21 +440,23 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
             }
         }
 
+    iteration_stats:
         if (iterative_deepening) {
             auto now = std::chrono::high_resolution_clock::now();
-            double elapsed_sec = std::chrono::duration<double>(now - start_time).count();
+            double elapsed_sec = std::chrono::duration<double>(now - start_time_).count();
             elapsed_time_ = elapsed_sec;
             depth_stats_.push_back({d, nodes_visited_, elapsed_sec, best_score_, best_move});
             uint64_t current_nodes = nodes_visited_;
             double nps = (elapsed_sec > 0.0) ? (current_nodes / elapsed_sec) : 0.0;
 
             std::string bf_str;
+            double measured_bf = 6.0;
             if (d == 1 || prev_nodes == 0) {
                 bf_str = "-nan";
             } else {
-                double avg_bf = static_cast<double>(current_nodes) / static_cast<double>(prev_nodes);
+                measured_bf = static_cast<double>(current_nodes) / static_cast<double>(prev_nodes);
                 std::ostringstream bf_ss;
-                bf_ss << std::fixed << std::setprecision(3) << avg_bf;
+                bf_ss << std::fixed << std::setprecision(3) << measured_bf;
                 bf_str = bf_ss.str();
             }
             prev_nodes = current_nodes;
@@ -410,13 +481,29 @@ Move Search::find_best_move(Board& board, int depth, bool iterative_deepening,
                       << bf_str << "  "
                       << pv_str << "   "
                       << best_score_ << "\n";
+
+            // Check soft time limit & predict if next depth can complete
+            if (time_limited_) {
+                double iter_time_sec = elapsed_sec - prev_elapsed_sec;
+                prev_elapsed_sec = elapsed_sec;
+
+                double soft_sec = std::chrono::duration<double>(soft_deadline_ms_).count();
+
+                // In Lines of Action, effective branching factor is typically 5x to 10x.
+                double bf = std::max(5.0, measured_bf);
+                double estimated_next_sec = elapsed_sec + iter_time_sec * bf;
+
+                if (elapsed_sec >= soft_sec * 0.35 || estimated_next_sec > soft_sec) {
+                    break;
+                }
+            } else {
+                prev_elapsed_sec = elapsed_sec;
+            }
         }
     }
 
-    if (!iterative_deepening) {
-        auto end_time = std::chrono::high_resolution_clock::now();
-        elapsed_time_ = std::chrono::duration<double>(end_time - start_time).count();
-    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    elapsed_time_ = std::chrono::duration<double>(end_time - start_time_).count();
 
     return best_move;
 }

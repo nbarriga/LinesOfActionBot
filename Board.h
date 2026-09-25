@@ -43,6 +43,10 @@ public:
     void load_fen(const std::string& placement, const std::string& side_to_move);
     std::string to_fen() const;
 
+    int ply_count() const { return ply_count_; }
+    int current_move_number() const { return (ply_count_ / 2) + 1; }
+    void set_ply_count(int plies) { ply_count_ = plies; }
+
     bool operator==(const Board& other) const;
     bool operator!=(const Board& other) const;
 
@@ -51,6 +55,7 @@ public:
 private:
     uint64_t pieces_[2];
     Color side_to_move_;
+    int ply_count_ = 0;
 };
 
 namespace std {

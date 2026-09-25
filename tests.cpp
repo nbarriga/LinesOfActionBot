@@ -1,6 +1,7 @@
 #include "Board.h"
 #include "Move.h"
 #include "Search.h"
+#include "TimeManager.h"
 #include "Types.h"
 #include <cassert>
 #include <chrono>
@@ -696,6 +697,100 @@ void test_transposition_table() {
     std::cout << "test_transposition_table passed!\n";
 }
 
+void test_time_manager() {
+    std::cout << "Running test_time_manager..." << std::endl;
+
+    // Test 1: 3-minute game + 2s increment (180000ms + 2000ms inc)
+    TimeControl tc;
+    tc.wtime = 180000;
+    tc.btime = 180000;
+    tc.winc = 2000;
+    tc.binc = 2000;
+    tc.move_overhead = 100;
+
+    // Move 1 (divisor = 20 - 1 = 19)
+    auto lim1 = TimeManager::calculate_limits(tc, Color::BLACK, 1);
+    assert(lim1.time_limited);
+    // Base: (180000 - 100) / 19 + 0.8 * 2000 = 179900 / 19 + 1600 = 9468 + 1600 = 11068
+    assert(lim1.soft_time_ms >= 11000 && lim1.soft_time_ms <= 11100);
+    assert(lim1.hard_time_ms >= lim1.soft_time_ms);
+
+    // Move 10 (divisor = 20 - 10 = 10)
+    auto lim10 = TimeManager::calculate_limits(tc, Color::BLACK, 10);
+    // Base: 179900 / 10 + 1600 = 17990 + 1600 = 19590
+    assert(lim10.soft_time_ms >= 19500 && lim10.soft_time_ms <= 19650);
+
+    // Move 14 (divisor = 20 - 14 = 6)
+    auto lim14 = TimeManager::calculate_limits(tc, Color::BLACK, 14);
+    // Base: 179900 / 6 + 1600 = 29983 + 1600 = 31583
+    assert(lim14.soft_time_ms >= 31500 && lim14.soft_time_ms <= 31650);
+
+    // Move 15 (switches to divisor = 5)
+    auto lim15 = TimeManager::calculate_limits(tc, Color::BLACK, 15);
+    // Base: 179900 / 5 + 1600 = 35980 + 1600 = 37580
+    assert(lim15.soft_time_ms >= 37500 && lim15.soft_time_ms <= 37650);
+
+    // Move 20 (still divisor = 5)
+    auto lim20 = TimeManager::calculate_limits(tc, Color::BLACK, 20);
+    assert(lim20.soft_time_ms == lim15.soft_time_ms);
+
+    // Move 25 (still divisor = 5)
+    auto lim25 = TimeManager::calculate_limits(tc, Color::BLACK, 25);
+    assert(lim25.soft_time_ms == lim15.soft_time_ms);
+
+    // Test 2: Fixed movetime
+    TimeControl tc_fixed;
+    tc_fixed.movetime = 500;
+    tc_fixed.move_overhead = 100;
+    auto lim_fixed = TimeManager::calculate_limits(tc_fixed, Color::BLACK, 1);
+    assert(lim_fixed.time_limited);
+    assert(lim_fixed.soft_time_ms == 400); // 500 - 100
+    assert(lim_fixed.hard_time_ms == 450); // 500 - 50
+
+    // Test 3: Fixed depth
+    TimeControl tc_depth;
+    tc_depth.depth = 5;
+    auto lim_depth = TimeManager::calculate_limits(tc_depth, Color::BLACK, 1);
+    assert(!lim_depth.time_limited);
+    assert(lim_depth.max_depth == 5);
+
+    // Test 4: Low time emergency clamping
+    TimeControl tc_low;
+    tc_low.btime = 150;
+    tc_low.move_overhead = 100;
+    auto lim_low = TimeManager::calculate_limits(tc_low, Color::BLACK, 1);
+    assert(lim_low.time_limited);
+    assert(lim_low.soft_time_ms >= 10);
+    assert(lim_low.hard_time_ms <= 150);
+
+    std::cout << "test_time_manager passed!\n";
+}
+
+void test_search_time_controls() {
+    std::cout << "Running test_search_time_controls..." << std::endl;
+    Board board;
+    Search search;
+
+    // Run search with 80ms soft limit, 150ms hard limit
+    SearchLimits limits;
+    limits.time_limited = true;
+    limits.soft_time_ms = 80;
+    limits.hard_time_ms = 150;
+    limits.max_depth = 20;
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    Move m = search.find_best_move(board, 20, true, SearchAlgorithm::ALPHABETA, true, true, limits);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double duration_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    assert(m != Move());
+    std::cout << "  Chosen move: " << m.to_uci() << " in " << duration_ms << "ms, depth reached: "
+              << search.depth_stats().back().depth << ", nodes: " << search.nodes_visited() << "\n";
+    assert(duration_ms < 400.0);
+
+    std::cout << "test_search_time_controls passed!\n";
+}
+
 int main() {
     std::cout << "=== Running Lines of Action Bot Tests ===\n";
     test_initial_board();
@@ -719,6 +814,8 @@ int main() {
     test_iterative_deepening();
     test_alphabeta();
     test_transposition_table();
+    test_time_manager();
+    test_search_time_controls();
     benchmark_alphabeta(7);
     std::cout << "\nAll tests passed successfully!\n";
     return 0;

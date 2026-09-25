@@ -1,6 +1,7 @@
 #include "Board.h"
 #include "Move.h"
 #include "Search.h"
+#include "TimeManager.h"
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -21,8 +22,10 @@ int main(int argc, char** argv) {
 
     SearchAlgorithm algo = SearchAlgorithm::ALPHABETA;
     int default_depth = 4;
+    bool depth_explicitly_set = false;
     bool use_tt = true;
     bool order_moves = true;
+    int move_overhead = 100;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -32,12 +35,15 @@ int main(int argc, char** argv) {
             else if (a == "alphabeta") algo = SearchAlgorithm::ALPHABETA;
         } else if (arg == "--depth" && i + 1 < argc) {
             default_depth = std::stoi(argv[++i]);
+            depth_explicitly_set = true;
         } else if (arg == "--tt" && i + 1 < argc) {
             std::string val = to_lower(argv[++i]);
             use_tt = (val == "true" || val == "1");
         } else if (arg == "--order" && i + 1 < argc) {
             std::string val = to_lower(argv[++i]);
             order_moves = (val == "true" || val == "1");
+        } else if (arg == "--overhead" && i + 1 < argc) {
+            move_overhead = std::stoi(argv[++i]);
         }
     }
 
@@ -104,11 +110,17 @@ int main(int argc, char** argv) {
                 }
             } else if (name_lower == "depth") {
                 int d = std::stoi(opt_val);
-                if (d >= 1) default_depth = d;
+                if (d >= 1) {
+                    default_depth = d;
+                    depth_explicitly_set = true;
+                }
             } else if (name_lower == "usett") {
                 use_tt = (val_lower == "true" || val_lower == "1");
             } else if (name_lower == "ordermoves") {
                 order_moves = (val_lower == "true" || val_lower == "1");
+            } else if (name_lower == "move overhead" || name_lower == "moveoverhead") {
+                int ov = std::stoi(opt_val);
+                if (ov >= 0) move_overhead = ov;
             }
         }
         else if (line.rfind("position", 0) == 0) {
@@ -152,23 +164,52 @@ int main(int argc, char** argv) {
             std::istringstream iss(line);
             std::string token;
             iss >> token; // "go"
-            int depth = default_depth;
+            TimeControl tc;
+            tc.move_overhead = move_overhead;
+
             while (iss >> token) {
                 if (token == "depth") {
                     int d;
-                    if (iss >> d) {
-                        depth = d;
-                    }
+                    if (iss >> d) tc.depth = d;
+                } else if (token == "wtime") {
+                    int t;
+                    if (iss >> t) tc.wtime = t;
+                } else if (token == "btime") {
+                    int t;
+                    if (iss >> t) tc.btime = t;
+                } else if (token == "winc") {
+                    int inc;
+                    if (iss >> inc) tc.winc = inc;
+                } else if (token == "binc") {
+                    int inc;
+                    if (iss >> inc) tc.binc = inc;
+                } else if (token == "movetime") {
+                    int mt;
+                    if (iss >> mt) tc.movetime = mt;
+                } else if (token == "movestogo") {
+                    int mtg;
+                    if (iss >> mtg) tc.movestogo = mtg;
                 }
             }
-            if (depth < 1) depth = 1;
+
+            int effective_depth = -1;
+            if (tc.depth > 0) {
+                effective_depth = tc.depth;
+            } else if (depth_explicitly_set) {
+                effective_depth = default_depth;
+            }
+            tc.depth = effective_depth;
+
+            SearchLimits limits = TimeManager::calculate_limits(tc, board.turn(), board.current_move_number());
+            int search_depth = (effective_depth > 0) ? effective_depth : (limits.time_limited ? 20 : default_depth);
+            if (search_depth < 1) search_depth = 1;
 
             Color winner;
             if (board.is_game_over(winner)) {
                 std::cout << "info string gameover " << color_to_string(winner) << "_wins" << std::endl;
                 std::cout << "bestmove (none)" << std::endl;
             } else {
-                Move chosen = search.find_best_move(board, depth, true, algo, order_moves, use_tt);
+                Move chosen = search.find_best_move(board, search_depth, true, algo, order_moves, use_tt, limits);
                 if (chosen == Move()) {
                     std::cout << "info string gameover " << color_to_string(~board.turn()) << "_wins" << std::endl;
                     std::cout << "bestmove (none)" << std::endl;
@@ -224,7 +265,16 @@ int main(int argc, char** argv) {
             break;
         }
         else if (line.rfind("Move Overhead", 0) == 0) {
-            std::cout << "debug: Move Overhead " << line << std::endl;
+            std::istringstream iss(line.substr(13));
+            std::string token;
+            while (iss >> token) {
+                if (token == "=" || token == ":") continue;
+                try {
+                    int val = std::stoi(token);
+                    if (val >= 0) move_overhead = val;
+                    break;
+                } catch (...) {}
+            }
         }
         else if (line.rfind("Threads", 0) == 0) {
             std::cout << "debug: Threads " << line << std::endl;
