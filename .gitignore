@@ -57,3 +57,4 @@ Testing/
 .cache/
 test_runner
 loabot
+generate_features

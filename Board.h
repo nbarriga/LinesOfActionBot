@@ -37,6 +37,15 @@ public:
     bool is_game_over(Color& winner) const;
     int evaluate() const;
 
+    struct Features {
+        int avg_dist = 0;
+        int adjacencies = 0;
+        int count = 0;
+    };
+
+    Features get_features(Color c) const;
+    Features get_differential_features() const;
+
     static Board from_fen(const std::string& fen);
     static Board from_fen(const std::string& placement, const std::string& side_to_move);
     void load_fen(const std::string& fen);

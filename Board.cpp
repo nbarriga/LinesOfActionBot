@@ -269,7 +269,7 @@ int evaluate_color(uint64_t bb) {
     }
 
     int avg_dist = total_dist_scaled / count;
-    return -avg_dist * 10 + (adjacencies / 2) * 8 + count * 5;
+    return -avg_dist * 24 + (adjacencies / 2) * 7 + count * 111;
 }
 
 } // anonymous namespace
@@ -334,6 +334,57 @@ int Board::evaluate() const {
     int opp_score = evaluate_color(pieces(~side_to_move_));
 
     return my_score - opp_score;
+}
+
+Board::Features Board::get_features(Color c) const {
+    uint64_t bb = pieces(c);
+    int count = __builtin_popcountll(bb);
+    if (count <= 1) {
+        return Features{0, 0, count};
+    }
+
+    int sum_f = 0;
+    int sum_r = 0;
+    uint64_t temp = bb;
+    while (temp) {
+        uint8_t sq = static_cast<uint8_t>(__builtin_ctzll(temp));
+        sum_f += square_file(sq);
+        sum_r += square_rank(sq);
+        temp &= temp - 1;
+    }
+
+    int total_dist_scaled = 0;
+    temp = bb;
+    int adjacencies = 0;
+
+    while (temp) {
+        uint8_t sq = static_cast<uint8_t>(__builtin_ctzll(temp));
+        int f = square_file(sq);
+        int r = square_rank(sq);
+        total_dist_scaled += std::abs(count * f - sum_f) + std::abs(count * r - sum_r);
+
+        uint64_t piece_mask = 1ULL << sq;
+        uint64_t neighbors = (piece_mask << 8)
+            | (piece_mask >> 8)
+            | ((piece_mask & NOT_H_FILE) << 1)
+            | ((piece_mask & NOT_A_FILE) >> 1)
+            | ((piece_mask & NOT_H_FILE) << 9)
+            | ((piece_mask & NOT_A_FILE) << 7)
+            | ((piece_mask & NOT_H_FILE) >> 7)
+            | ((piece_mask & NOT_A_FILE) >> 9);
+        adjacencies += __builtin_popcountll(neighbors & bb);
+
+        temp &= temp - 1;
+    }
+
+    int avg_dist = total_dist_scaled / count;
+    return Features{avg_dist, adjacencies / 2, count};
+}
+
+Board::Features Board::get_differential_features() const {
+    Features me = get_features(side_to_move_);
+    Features opp = get_features(~side_to_move_);
+    return Features{me.avg_dist - opp.avg_dist, me.adjacencies - opp.adjacencies, me.count - opp.count};
 }
 
 Board Board::from_fen(const std::string& fen) {
